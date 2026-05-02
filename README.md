@@ -45,8 +45,18 @@ data/rollouts/            # gitignored: collected transitions
 ## Setup
 
 ```bash
+make install              # uv sync
+make check                # lint + tests
+make smoke                # 5-episode rollout end-to-end
+make all                  # install + check + smoke
+```
+
+Or call uv directly:
+
+```bash
 uv sync
 uv run pytest -q                    # run smoke tests
+uv run ruff check .                 # lint
 uv run python -m scripts.collect_rollouts --episodes 50 --max-steps 200
 ```
 
