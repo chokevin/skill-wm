@@ -17,6 +17,11 @@ data/rollouts/
 data/checkpoints/
 data/eval/
 
+# rune-py local mode lands outputs under cwd/datasets and cwd/checkpoints
+# (matching ctx.durable_datasets_dir / ctx.durable_checkpoints_dir defaults).
+datasets/
+checkpoints/
+
 # Editor / OS
 .DS_Store
 .idea/

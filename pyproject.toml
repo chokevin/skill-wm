@@ -15,6 +15,12 @@ dependencies = [
     "tqdm>=4.67.3",
 ]
 
+# Note: rune-py is intentionally NOT listed here. uv resolves dependency
+# groups at lock time, which would force GitHub SSH access on every laptop
+# that runs `uv sync`. Instead, `bin/setup.sh` installs rune-py separately
+# via `uv pip install` (either from RUNE_PY_LOCAL=... or git+ssh). Local
+# Crafter rollouts and tests do not import rune.
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",

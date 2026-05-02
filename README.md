@@ -38,6 +38,12 @@ scripts/
   collect_rollouts.py     # entry point: dump npz transitions to disk
 tests/
   test_smoke.py           # end-to-end smoke test
+experiments/              # rune-py jobs for the voice-agent-flex AKS cluster
+  collect_rollouts/config.py   # parallel rollout collection across N pods
+  train_wm/config.py           # (stub) train the trained-WM checkpoint
+  eval_baselines/config.py     # (stub) score trained-WM vs LLM-as-WM
+bin/
+  setup.sh                # one-shot: az login + kubeconfig + venv + rune CLI
 configs/
 data/rollouts/            # gitignored: collected transitions
 ```
@@ -64,6 +70,69 @@ Optional, for the LLM-as-WM baseline (later):
 ```bash
 cp .env.example .env                # add OPENAI_API_KEY
 ```
+
+## Running on Rune (voice-agent-flex)
+
+This repo is small enough to run end-to-end on a laptop. Rune is used when we want **parallel rollout collection** across many pods, and (later) when the trained-WM model needs a real GPU for training.
+
+One-time setup:
+
+```bash
+make rune-setup     # az login, voice-agent-flex kubeconfig, uv sync (incl. rune-py)
+```
+
+`bin/setup.sh` targets `voice-agent-flex` in `voice-agent-flex-rg`, namespace `ray`. Override via `SKILL_WM_CLUSTER_NAME` / `SKILL_WM_CLUSTER_RG` / `SKILL_WM_NS` if needed.
+
+You also need the `rune` CLI on your `$PATH`. The script tells you how to install it from `azure-management-and-platforms/aks-ai-runtime` if missing.
+
+### Sanity-check the rune wiring locally (no cluster)
+
+The `@rune.train` / `@rune.eval` handles are callable directly — they synthesize a `Ctx` rooted at `cwd` and run the function in this process. No GPU scheduling, no Kueue admission, no manifest applied:
+
+```bash
+make rune-collect-local                            # runs collect_rollouts() in-process
+SKILL_WM_TOTAL_EPISODES=20 make rune-collect-local
+```
+
+Output lands under `./skill-wm-collect-smoke/rank-000/ep_*.npz` (cwd-rooted because `is_remote=False`).
+
+### Render the cluster manifest (no submit)
+
+`--dry-run` shells to the rune Go CLI in `client` mode — validates the manifest and prints the rendered RayJob without applying anything:
+
+```bash
+make rune-collect-dry
+make rune-train-dry
+make rune-eval-dry
+```
+
+### Submit jobs to the cluster
+
+You must set `RUNE_NAME` per submit so each run is uniquely named in Kueue:
+
+```bash
+# Collect: rune envelope is correct, but submit will fail until skill_wm is
+# published — see TODO(skill-wm-rune-publish) in collect_rollouts/config.py.
+RUNE_NAME=skill-wm-collect-001 SKILL_WM_TOTAL_EPISODES=500 SKILL_WM_WORKERS=10 \
+    make rune-collect
+
+# Train: stub — not runnable yet (skill-wm-trained-wm todo).
+RUNE_NAME=skill-wm-train-001 SKILL_WM_DATA_RUN=skill-wm-collect-001 \
+    uv run python experiments/train_wm/config.py
+
+# Eval: stub — also requires --upstream-checkpoint at submit time
+# (rune.eval has no default).
+RUNE_NAME=skill-wm-eval-001 SKILL_WM_DATA_RUN=skill-wm-collect-001 \
+                            SKILL_WM_TRAIN_RUN=skill-wm-train-001 \
+    uv run python experiments/eval_baselines/config.py \
+        --upstream-checkpoint /data/skill-wm/checkpoints/skill-wm-train-001/wm.pt
+```
+
+All experiments default to `team="experimental"` (the only safe Kueue queue for research on voice-agent-flex). Outputs land under `<ctx.data_dir>/skill-wm/{rollouts,checkpoints,eval}/<run-name>/` — locally that's cwd, on the cluster it's the PVC mount.
+
+**Known gaps before this can actually run on the cluster:**
+- `skill_wm` package needs to be `pip install`-able from the cluster (publish the repo and add `"skill-wm @ git+https://..."` to `RUNTIME_PIP`). Until then, `--local` and `--dry-run` work; cluster submit will fail with `ImportError` on the first pod. See `TODO(skill-wm-rune-publish)` in `experiments/collect_rollouts/config.py`.
+- `train_wm` and `eval_baselines` are stubs (raise `NotImplementedError`). Real bodies depend on the `skill-wm-trained-wm` / `skill-wm-llm-baseline` / `skill-wm-eval-metrics` todos.
 
 ## Baselines we will compare in T1
 

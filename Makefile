@@ -1,7 +1,8 @@
-.PHONY: help install sync test lint fix format check smoke collect-small collect-full clean all
+.PHONY: help install sync test lint fix format check smoke collect-small collect-full clean all \
+        rune-setup rune-collect-local rune-collect rune-collect-dry rune-train-dry rune-eval-dry
 
 help:
-	@echo "Targets:"
+	@echo "Local targets:"
 	@echo "  install       sync deps via uv (creates .venv if missing)"
 	@echo "  test          run pytest"
 	@echo "  lint          ruff check (no fixes)"
@@ -13,6 +14,14 @@ help:
 	@echo "  collect-full  500-episode rollout (~5min)"
 	@echo "  clean         remove caches and rollouts"
 	@echo "  all           install + check + smoke"
+	@echo ""
+	@echo "Rune (voice-agent-flex AKS cluster) targets:"
+	@echo "  rune-setup           az login + kubeconfig + venv (run once)"
+	@echo "  rune-collect-local   run collect_rollouts function in this process (no submit)"
+	@echo "  rune-collect-dry     render rollout-collection manifest, do not apply"
+	@echo "  rune-collect         submit rollout-collection job to cluster"
+	@echo "  rune-train-dry       render trained-WM training manifest"
+	@echo "  rune-eval-dry        render baseline eval manifest"
 
 install sync:
 	uv sync
@@ -46,3 +55,26 @@ clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 
 all: install check smoke
+
+# ---- Rune (voice-agent-flex) -----------------------------------------------
+# These targets only render or submit. They never auto-submit a job; a
+# top-level `RUNE_NAME=...` is required for cluster submits.
+
+rune-setup:
+	bash bin/setup.sh
+
+rune-collect-local:
+	uv run python experiments/collect_rollouts/config.py --local
+
+rune-collect-dry:
+	uv run python experiments/collect_rollouts/config.py --dry-run
+
+rune-collect:
+	@if [ -z "$$RUNE_NAME" ]; then echo "set RUNE_NAME=skill-wm-collect-NNN before submitting"; exit 1; fi
+	uv run python experiments/collect_rollouts/config.py
+
+rune-train-dry:
+	uv run python experiments/train_wm/config.py --dry-run
+
+rune-eval-dry:
+	uv run python experiments/eval_baselines/config.py --dry-run
