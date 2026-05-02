@@ -1,0 +1,41 @@
+[project]
+name = "skill-wm"
+version = "0.1.0"
+description = "Prediction-only testbed for learned world models vs LLM-as-WM in Crafter."
+requires-python = ">=3.12"
+dependencies = [
+    "crafter>=1.8.3",
+    "imageio>=2.37.3",
+    "numpy>=2.4.4",
+    "openai>=2.33.0",
+    "pydantic>=2.13.3",
+    "python-dotenv>=1.2.2",
+    "pyyaml>=6.0.3",
+    "torch>=2.11.0",
+    "tqdm>=4.67.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "ruff>=0.15.12",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["skill_wm"]

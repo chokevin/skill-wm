@@ -1,0 +1,29 @@
+# Configuration for prediction-only smell test (T1).
+# Runtime knobs only; defaults aim for a few-minutes iteration loop on laptop.
+
+data:
+  out_dir: data/rollouts
+  num_episodes: 200
+  max_steps_per_episode: 300
+  policy: biased_random
+  seed_start: 0
+
+split:
+  # Held-out test set is created by world seed, not by step.
+  train_seed_range: [0, 160]
+  val_seed_range: [160, 180]
+  test_seed_range: [180, 200]
+
+model:
+  # Placeholder for T1 trained-WM hyperparams; not consumed yet.
+  hidden_dim: 256
+  n_layers: 2
+  lr: 3.0e-4
+  batch_size: 256
+  steps: 20000
+
+llm:
+  # Placeholder for LLM-as-WM baseline; not consumed yet.
+  model: gpt-4o-mini
+  temperature: 0.0
+  few_shot_n: 8
