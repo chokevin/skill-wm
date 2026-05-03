@@ -130,10 +130,17 @@ RUNE_NAME=skill-wm-eval-001 SKILL_WM_DATA_RUN=skill-wm-collect-001 \
 
 All experiments default to `team="experimental"` (the only safe Kueue queue for research on voice-agent-flex). Outputs land under `<ctx.data_dir>/skill-wm/{rollouts,checkpoints,eval}/<run-name>/` — locally that's cwd, on the cluster it's the PVC mount.
 
-**Known gaps before this can actually run on the cluster:**
+**Cluster status (verified 2026-05-02)**: `collect_rollouts` runs end-to-end on voice-agent-flex. `skill-wm-collect-smoke-004` (5 episodes, biased random) wrote 5 npz to `/data/datasets/skill-wm/rollouts/skill-wm-collect-smoke-004/rank-000/` with the expected schema (192 transitions in ep 0, 36% per-action success rate, 3 achievements unlocked).
+
+**Known gaps before T1 can actually run on the cluster:**
 - `train_wm` and `eval_baselines` are stubs (raise `NotImplementedError`). Real bodies depend on the `skill-wm-trained-wm` / `skill-wm-llm-baseline` / `skill-wm-eval-metrics` todos.
 
-**Note**: `skill_wm` is `pip install`-able from the cluster via `RUNTIME_PIP`'s `skill-wm @ git+https://github.com/chokevin/skill-wm.git@<ref>`. Repo is currently public to avoid cluster-side auth provisioning. The underlying friction (rune-py shipping single files only) is tracked upstream as [aks-ai-runtime#289](https://github.com/azure-management-and-platforms/aks-ai-runtime/issues/289). When that lands, we can flip the repo back to private and ship the source tree directly via `runtime.working_dir`.
+**Cluster-side friction (rune issues, with workarounds):**
+- `skill_wm` is `pip install`-able from the cluster via `RUNTIME_PIP`'s `git+https://github.com/chokevin/skill-wm.git@<ref>`. Repo is public to avoid cluster-side auth provisioning. The underlying friction (rune-py shipping single files only) is tracked upstream as [aks-ai-runtime#289](https://github.com/azure-management-and-platforms/aks-ai-runtime/issues/289). When that lands, we can ship the source tree directly via `runtime.working_dir`.
+- **Pip-spec shell-quoting**: rune's entrypoint generator joins `runtime.pip` entries unquoted on a `/bin/sh` line. `<` / `>` in version constraints are parsed as redirects (`<3` → `cannot open 3`); `pkg @ url` PEP 508 specs are word-split. **Workaround:** use only `==` exact pins and bare `git+https://...@<ref>` form (no `pkg @`).
+- **RayCluster leak on FAILED**: `shutdownAfterJobFinishes: true` is honored but `ttlSecondsAfterFinished` defaults to 24h, so a failed job's RayCluster holds its DRA GPU claim for a day, blocking subsequent submits from the same team. **Workaround:** `kubectl delete rayjob <name> -n ray`.
+- **`gpus=0` Python/Go contract drift**: `@rune.train` Python decorator accepts `gpus=0`, rune Go CLI rejects `compute.gpus=0` with `want 1..8`. CPU-only Crafter rollouts therefore burn an H100. Default is `gpus=1`.
+- **No `runtime.image` override**: cluster image is hardcoded `rayproject/ray:2.39.0-py310-gpu` (Python 3.10). All cluster deps must be 3.10-compatible. `requires-python = ">=3.10"` and `numpy>=2.0` (not `>=2.4.4`) here.
 
 ## Baselines we will compare in T1
 
