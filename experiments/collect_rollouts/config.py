@@ -72,6 +72,15 @@ SKILL_WM_REF = os.environ.get("SKILL_WM_REPO_REF", "main")
 # Cluster-side pip list. Crafter rollouts only need crafter + numpy + tqdm,
 # plus skill-wm itself (so the pod can `from skill_wm.data.collect import collect`).
 #
+# CRITICAL: rune's entrypoint generator does NOT shell-quote each pip spec.
+# It joins them with spaces inside a /bin/sh `pip install ... ...` line.
+# That means:
+#   - any `<` or `>` in a version constraint is parsed as a shell redirect
+#     (`numpy>=2.0,<3` → /bin/sh tries `<3` and fails)
+#   - any `pkg @ url` PEP508 spec is word-split into 3 args, breaking pip
+# Use ONLY exact `==` pins and bare `git+https://...@<ref>` (no `pkg @`).
+# Tracked separately from #289 — different bug, same general theme.
+#
 # TODO(skill-wm-rune-publish): rune-py's --extra-script ships exactly one .py
 # file (this config), so the skill_wm package is not on the pod by default.
 # Tracked upstream:
@@ -87,11 +96,11 @@ SKILL_WM_REF = os.environ.get("SKILL_WM_REPO_REF", "main")
 # source tree directly via runtime.working_dir, this can flip back to private.
 RUNTIME_PIP = [
     "crafter==1.8.3",
-    "numpy>=2.0,<3",
-    "tqdm>=4.66",
-    "imageio>=2.37",
-    "pyyaml>=6",
-    f"skill-wm @ {SKILL_WM_REPO}@{SKILL_WM_REF}",
+    "numpy==2.1.3",
+    "tqdm==4.67.1",
+    "imageio==2.37.0",
+    "pyyaml==6.0.2",
+    f"{SKILL_WM_REPO}@{SKILL_WM_REF}",
 ]
 
 
