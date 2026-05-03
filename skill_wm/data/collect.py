@@ -4,6 +4,12 @@ For the smell test, we use a simple random policy and a "biased random"
 policy (which weights `do` and movement higher than crafting), since pure
 random rarely produces success on craft actions.
 
+For meaningful per-action calibration on crafting actions, we add a
+`scripted_craft` policy that drives the agent toward crafting unlocks
+(tree -> wood -> table -> wood_pickaxe -> stone -> furnace -> stone tools
+-> iron). Without it, all `make_*` actions stay at 0 positives forever
+and per-action ECE on crafting is undefined.
+
 Transitions are written one episode per .npz file under data/rollouts/.
 """
 
@@ -12,6 +18,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from tqdm import tqdm
@@ -22,11 +29,15 @@ from skill_wm.envs.crafter_env import CrafterWrapper
 # Action policies #################################################
 
 
-def random_policy(rng: np.random.Generator, num_actions: int):
+def random_policy(
+    rng: np.random.Generator, num_actions: int, info: dict[str, Any] | None = None
+) -> int:
     return int(rng.integers(0, num_actions))
 
 
-def biased_random_policy(rng: np.random.Generator, num_actions: int):
+def biased_random_policy(
+    rng: np.random.Generator, num_actions: int, info: dict[str, Any] | None = None
+) -> int:
     """Bias toward exploration actions; deweight rare crafting actions.
 
     Random policy almost never satisfies make_*_pickaxe preconditions, so the
@@ -51,9 +62,189 @@ def biased_random_policy(rng: np.random.Generator, num_actions: int):
     return int(rng.choice(num_actions, p=weights))
 
 
+# Tile-id constants. Must match the TILE_LEGEND in skill_wm.models.baselines.
+_TILE_WATER, _TILE_GRASS, _TILE_STONE, _TILE_PATH, _TILE_SAND = 1, 2, 3, 4, 5
+_TILE_TREE, _TILE_LAVA, _TILE_COAL, _TILE_IRON, _TILE_DIAMOND = 6, 7, 8, 9, 10
+_TILE_TABLE, _TILE_FURNACE = 11, 12
+_WALKABLE_IDS = {_TILE_GRASS, _TILE_PATH, _TILE_SAND}
+
+# Crafter direction convention: dict(left=(-1,0), right=(1,0), up=(0,-1), down=(0,1)).
+_DIRS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+_DIR_TO_MOVE = {
+    (-1, 0): "move_left",
+    (1, 0): "move_right",
+    (0, -1): "move_up",
+    (0, 1): "move_down",
+}
+
+
+def _aidx(name: str) -> int:
+    return ACTION_NAMES.index(name)
+
+
+def _front_tile_id(
+    sem: np.ndarray, pos: np.ndarray, facing: tuple[int, int]
+) -> int:
+    fx, fy = facing
+    px, py = int(pos[0]), int(pos[1])
+    sx, sy = px + fx, py + fy
+    if 0 <= sx < sem.shape[0] and 0 <= sy < sem.shape[1]:
+        return int(sem[sx, sy])
+    return 0
+
+
+def _adjacent_tile_ids(sem: np.ndarray, pos: np.ndarray) -> set[int]:
+    ids: set[int] = set()
+    px, py = int(pos[0]), int(pos[1])
+    for dx, dy in _DIRS:
+        sx, sy = px + dx, py + dy
+        if 0 <= sx < sem.shape[0] and 0 <= sy < sem.shape[1]:
+            ids.add(int(sem[sx, sy]))
+    return ids
+
+
+def _nearest_target(
+    sem: np.ndarray, pos: np.ndarray, target_ids: set[int], max_radius: int = 20
+) -> tuple[int, int] | None:
+    """Return (dx, dy) to the L1-nearest cell in `target_ids` within `max_radius`,
+    or None if not found. (dx, dy) is in Crafter convention."""
+    px, py = int(pos[0]), int(pos[1])
+    h, w = sem.shape
+    best: tuple[int, int] | None = None
+    best_dist = max_radius + 1
+    for dx in range(-max_radius, max_radius + 1):
+        for dy in range(-max_radius, max_radius + 1):
+            sx, sy = px + dx, py + dy
+            if not (0 <= sx < h and 0 <= sy < w):
+                continue
+            if int(sem[sx, sy]) in target_ids:
+                d = abs(dx) + abs(dy)
+                if d < best_dist:
+                    best_dist = d
+                    best = (dx, dy)
+    return best
+
+
+def _move_toward(rng: np.random.Generator, dx: int, dy: int) -> int:
+    """Pick a move action that reduces |dx|+|dy|. Tie-broken randomly."""
+    if abs(dx) > abs(dy):
+        return _aidx("move_right" if dx > 0 else "move_left")
+    if abs(dy) > abs(dx):
+        return _aidx("move_down" if dy > 0 else "move_up")
+    if rng.random() < 0.5:
+        return _aidx("move_right" if dx > 0 else "move_left")
+    return _aidx("move_down" if dy > 0 else "move_up")
+
+
+def scripted_craft_policy(
+    rng: np.random.Generator, num_actions: int, info: dict[str, Any] | None = None
+) -> int:
+    """Goal-directed policy that drives toward crafting unlocks.
+
+    The point of this policy is data: biased_random produces zero positive
+    examples for ``make_*`` because it never assembles the prerequisites
+    (wood -> table -> wood_pickaxe -> ...). This policy will. It is NOT
+    trying to be optimal; it is trying to **execute crafting actions when
+    their preconditions are met**, so the eval harness has positive
+    examples to score against.
+
+    Priority (highest first):
+      1. ``make_iron_*`` if at table+furnace with wood+coal+iron in inventory.
+      2. ``make_stone_*`` if at table with wood+stone.
+      3. ``make_wood_*`` if at table with wood.
+      4. ``place_table`` if we have wood and no table within crop reach.
+      5. ``place_furnace`` if at table with stone and no furnace within reach.
+      6. ``do`` on the facing tile if it's collectible and we have the tool.
+      7. Navigate one step toward the nearest interesting tile in priority
+         tree > stone > coal > iron (gated by tool requirements).
+      8. Fallback: biased random.
+    """
+    if info is None or "semantic" not in info or "player_pos" not in info:
+        # Reset-time call before the first env.step() — fall back.
+        return biased_random_policy(rng, num_actions, info)
+
+    sem = info["semantic"]
+    pos = np.asarray(info["player_pos"])
+    facing = tuple(int(x) for x in info.get("facing", (0, 1)))
+    inv = info.get("inventory", {})
+
+    front = _front_tile_id(sem, pos, facing)
+    adj = _adjacent_tile_ids(sem, pos)
+    at_table = _TILE_TABLE in adj
+    at_furnace = _TILE_FURNACE in adj
+
+    if (
+        at_table
+        and at_furnace
+        and inv.get("wood", 0) >= 1
+        and inv.get("coal", 0) >= 1
+        and inv.get("iron", 0) >= 1
+    ):
+        return _aidx(rng.choice(["make_iron_pickaxe", "make_iron_sword"]))
+    if at_table and inv.get("wood", 0) >= 1 and inv.get("stone", 0) >= 1:
+        return _aidx(rng.choice(["make_stone_pickaxe", "make_stone_sword"]))
+    if at_table and inv.get("wood", 0) >= 1:
+        return _aidx(rng.choice(["make_wood_pickaxe", "make_wood_sword"]))
+
+    if inv.get("wood", 0) >= 2 and front in _WALKABLE_IDS:
+        if _nearest_target(sem, pos, {_TILE_TABLE}, max_radius=8) is None:
+            return _aidx("place_table")
+
+    if at_table and inv.get("stone", 0) >= 4 and front in _WALKABLE_IDS:
+        if _nearest_target(sem, pos, {_TILE_FURNACE}, max_radius=8) is None:
+            return _aidx("place_furnace")
+
+    # Do on facing tile (collectibles, gated by tool)
+    if front == _TILE_TREE:
+        return _aidx("do")
+    if front == _TILE_STONE and inv.get("wood_pickaxe", 0) >= 1:
+        return _aidx("do")
+    if front == _TILE_COAL and inv.get("wood_pickaxe", 0) >= 1:
+        return _aidx("do")
+    if front == _TILE_IRON and inv.get("stone_pickaxe", 0) >= 1:
+        return _aidx("do")
+    if front == _TILE_DIAMOND and inv.get("iron_pickaxe", 0) >= 1:
+        return _aidx("do")
+    if front == _TILE_WATER and rng.random() < 0.3:
+        return _aidx("do")
+
+    # Navigate to nearest interesting tile
+    nav_targets: list[tuple[set[int], str | None]] = [
+        ({_TILE_TREE}, None),
+        ({_TILE_STONE}, "wood_pickaxe"),
+        ({_TILE_COAL}, "wood_pickaxe"),
+        ({_TILE_IRON}, "stone_pickaxe"),
+    ]
+    for target_ids, prereq in nav_targets:
+        if prereq is not None and inv.get(prereq, 0) == 0:
+            continue
+        offset = _nearest_target(sem, pos, target_ids)
+        if offset is not None:
+            return _move_toward(rng, *offset)
+
+    return biased_random_policy(rng, num_actions, info)
+
+
+def mixed_policy(
+    rng: np.random.Generator, num_actions: int, info: dict[str, Any] | None = None
+) -> int:
+    """70% scripted, 30% biased random.
+
+    The scripted side gives us crafting positives; the biased-random side
+    gives us natural negatives across all action types (e.g. trying make_*
+    without ingredients, trying move_* into stone). Both signals are needed
+    for honest per-action calibration on the eval harness.
+    """
+    if rng.random() < 0.7:
+        return scripted_craft_policy(rng, num_actions, info)
+    return biased_random_policy(rng, num_actions, info)
+
+
 POLICIES: dict[str, Callable] = {
     "random": random_policy,
     "biased_random": biased_random_policy,
+    "scripted_craft": scripted_craft_policy,
+    "mixed": mixed_policy,
 }
 
 
@@ -125,12 +316,12 @@ def collect(
     for ep in tqdm(range(num_episodes), desc=f"rollouts({policy_name})"):
         ep_seed = seed_start + ep
         env = CrafterWrapper(seed=ep_seed)
-        _, _ = env.reset(episode=ep)
+        _, info = env.reset(episode=ep)
         transitions: list[Transition] = []
         done = False
         for _ in range(max_steps_per_episode):
-            action = policy(rng, env.num_actions)
-            transition, _, _, done = env.step(action)
+            action = policy(rng, env.num_actions, info)
+            transition, _, info, done = env.step(action)
             transitions.append(transition)
             total_transitions += 1
             if transition.success:
