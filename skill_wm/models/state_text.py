@@ -46,6 +46,7 @@ TILE_GLYPH: dict[int, str] = {
     16: "S",  # skeleton
     17: ">",  # arrow
     18: "P",  # plant
+    19: "?",  # masked: outside the predictor's observation budget
 }
 
 FACING_NAME: dict[tuple[int, int], str] = {

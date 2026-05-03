@@ -137,6 +137,47 @@ def split_by_seed(
     return train, evalu
 
 
+def apply_obs_mask(rows: list[ScoringRow], radius: int | None) -> list[ScoringRow]:
+    """Restrict each row's `semantic_crop_before` to a center (2R+1)×(2R+1) view.
+
+    Tiles outside the radius are replaced with the sentinel
+    ``MASKED_TILE_ID`` (=19, glyph "?", legend name "masked"). The
+    player tile remains visible at the center; the radius is measured
+    from the center cell in Chebyshev (L∞) distance, so radius=2 gives
+    a 5×5 visible window.
+
+    A radius of ``None`` (or ``>=`` half the crop) is a no-op (full
+    obs, the T1 setup). Useful for sweeping ``--obs-radius {2,3,5,full}``.
+
+    This produces NEW ScoringRow instances (the dataclass is frozen)
+    with a shallow copy of every other field. The original rows are
+    unmodified.
+    """
+    if radius is None:
+        return rows
+    # Lazy import to avoid models<->dataset import cycles at module load.
+    from skill_wm.models.baselines import MASKED_TILE_ID
+
+    out: list[ScoringRow] = []
+    for r in rows:
+        crop = r.semantic_crop_before
+        h, w = crop.shape
+        cx, cy = h // 2, w // 2
+        if radius >= max(cx, cy):
+            out.append(r)
+            continue
+        masked = np.full_like(crop, MASKED_TILE_ID)
+        r0, r1 = cx - radius, cx + radius + 1
+        c0, c1 = cy - radius, cy + radius + 1
+        masked[r0:r1, c0:c1] = crop[r0:r1, c0:c1]
+        # Build a new ScoringRow with the masked crop. dataclasses.replace
+        # respects frozen=True.
+        from dataclasses import replace as dc_replace
+
+        out.append(dc_replace(r, semantic_crop_before=masked))
+    return out
+
+
 def manifest(rows: list[ScoringRow]) -> dict:
     """Summary stats for a row set; print this before scoring."""
     actions = np.array([r.action for r in rows])

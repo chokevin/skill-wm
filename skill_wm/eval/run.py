@@ -22,15 +22,17 @@ from pathlib import Path
 
 import numpy as np
 
-from skill_wm.eval.dataset import format_manifest, load_dir, manifest, split_by_seed
+from skill_wm.eval.dataset import apply_obs_mask, format_manifest, load_dir, manifest, split_by_seed
 from skill_wm.eval.metrics import (
     aggregate_metrics,
     format_per_action_table,
     per_action_breakdown,
 )
 from skill_wm.models.baselines import (
+    InventoryOnlyMLP,
     MarginalPredictor,
     PreconditionPredictor,
+    PreconditionWithBackoff,
     Predictor,
     RandomPredictor,
 )
@@ -46,6 +48,10 @@ def build_baseline(name: str, llm_cache: Path | None) -> Predictor:
         return MarginalPredictor()
     if name == "precondition":
         return PreconditionPredictor()
+    if name == "precondition+backoff":
+        return PreconditionWithBackoff()
+    if name == "inv-mlp":
+        return InventoryOnlyMLP()
     if name == "trained":
         # Lazy import: torch only required if the trained baseline is used.
         from skill_wm.models.trained_wm import TrainedWM
@@ -75,6 +81,16 @@ def run(args: argparse.Namespace) -> dict:
         evalu = [evalu[i] for i in sorted(idx.tolist())]
         log.info("eval-limit: subsampled to %d rows", len(evalu))
 
+    if args.obs_radius is not None:
+        # Apply identical masking to train and eval so trained models
+        # see masked tiles at fit-time too. Row identity (seed/episode/step)
+        # is preserved, so LLM cache keys remain valid IF the prompt text
+        # hashes the same; the mask glyph "?" changes the prompt, so
+        # masked-vs-unmasked use different cache entries by construction.
+        train = apply_obs_mask(train, args.obs_radius)
+        evalu = apply_obs_mask(evalu, args.obs_radius)
+        log.info("obs-radius=%d: masked train+eval semantic_crop", args.obs_radius)
+
     overall_manifest = manifest(rows)
     eval_manifest = manifest(evalu)
     print("\n=== full dataset manifest ===")
@@ -103,6 +119,7 @@ def run(args: argparse.Namespace) -> dict:
         "n_eval": len(evalu),
         "train_frac": args.train_frac,
         "split_seed": args.split_seed,
+        "obs_radius": args.obs_radius,
         "baselines": list(args.baselines),
         "results": results,
         "manifest": eval_manifest,
@@ -138,7 +155,15 @@ def parse_args() -> argparse.Namespace:
         "--baselines",
         nargs="+",
         default=["random", "marginal", "precondition"],
-        choices=["random", "marginal", "precondition", "trained", "llm-zero"],
+        choices=[
+            "random",
+            "marginal",
+            "precondition",
+            "precondition+backoff",
+            "inv-mlp",
+            "trained",
+            "llm-zero",
+        ],
         help="which baselines to score (llm-zero needs OPENAI_API_KEY)",
     )
     p.add_argument("--train-frac", type=float, default=0.6, help="seed-disjoint train fraction")
@@ -156,6 +181,16 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="cap eval-split row count (deterministic subsample). Useful for "
         "expensive baselines like llm-zero where 5K calls is overkill for a smoke test.",
+    )
+    p.add_argument(
+        "--obs-radius",
+        type=int,
+        default=None,
+        help="restrict each row's semantic_crop to a (2R+1)×(2R+1) window centered "
+        "on the player; tiles outside become MASKED. Applied to train AND eval. "
+        "Use to test partial-observability: rules degrade because they can't read "
+        "hidden cells; trained WM should degrade more gracefully because it learned "
+        "from masked data. Omit for full-obs (T1 setup).",
     )
     p.add_argument(
         "--llm-cache",

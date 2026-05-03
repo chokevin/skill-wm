@@ -47,7 +47,7 @@ from skill_wm.eval.dataset import INVENTORY_KEYS, ScoringRow
 
 log = logging.getLogger(__name__)
 
-NUM_TILES = 19  # 0..18 inclusive (see TILE_LEGEND in baselines.py)
+NUM_TILES = 20  # 0..19 inclusive (see TILE_LEGEND in baselines.py; 19 = masked sentinel)
 NUM_ACTIONS = len(ACTION_NAMES)
 INV_SIZE = len(INVENTORY_KEYS)
 CROP_SIZE = 15

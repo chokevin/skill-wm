@@ -112,6 +112,7 @@ TILE_LEGEND: dict[int, str] = {
     16: "skeleton",
     17: "arrow",
     18: "plant",
+    19: "masked",  # sentinel for tiles outside the predictor's observation budget
 }
 
 WALKABLE_TILES = {"grass", "path", "sand"}
@@ -119,6 +120,14 @@ ATTACK_TILES = {"zombie", "skeleton", "cow"}
 DRINK_TILES = {"water"}
 EAT_TILES = {"plant", "cow"}
 COLLECTABLE_TILES = {"tree", "stone", "coal", "iron", "diamond"}
+
+# Distinguished tile id for "outside observation radius". Returned by
+# `_tile_at` as the string "masked" (different from "void", which means
+# off the world entirely, and "unknown", which means an id we don't
+# have a name for). Predictors should treat a "masked" answer as "I
+# can't see this cell" — same epistemic status as off-world for rules,
+# but the trained WM can learn what is statistically likely there.
+MASKED_TILE_ID: int = 19
 
 
 def _tile_at(crop: np.ndarray, dx: int, dy: int) -> str:
@@ -270,3 +279,158 @@ class PreconditionPredictor:
             )
 
         return False
+
+
+class PreconditionWithBackoff:
+    """Precondition rules + per-action marginal fallback when state is masked.
+
+    The vanilla `PreconditionPredictor` is brittle under partial obs: any
+    rule that queries a masked cell trivially fails (returns 0) because
+    "masked" doesn't match any named tile set. That's a *deliberately
+    cautious* answer ("I can't see, so I assume not"), but it's not the
+    strongest hand-built competitor a reviewer would credit. A reasonable
+    rule-based system would notice "I can't read the cell I need" and
+    abstain, falling back to the empirical per-action prior.
+
+    This baseline implements that. For each row we ask: "would the rule
+    have inspected a masked cell to make its decision?" If yes, we abstain
+    and emit the marginal P(success | action). If no, we emit the rule's
+    {0, 1} answer.
+
+    The "would inspect a masked cell" check is conservative: we mark the
+    row as "depends on a masked cell" iff any of the cells in the player's
+    3×3 neighborhood (the maximum span of the existing rules — both
+    `_front_tile` and `_has_adjacent` query inside this window) is the
+    MASKED sentinel.
+
+    This is the strongest hand-built baseline: rules where they apply,
+    learned per-action priors where they don't.
+    """
+
+    name = "precondition+backoff"
+
+    def __init__(self) -> None:
+        self._rules = PreconditionPredictor()
+        self._marginal = MarginalPredictor()
+
+    def fit(self, train_rows: list[ScoringRow]) -> None:
+        # MarginalPredictor needs train data; rules are stateless.
+        self._marginal.fit(train_rows)
+
+    def predict(self, eval_rows: list[ScoringRow]) -> np.ndarray:
+        out = np.empty(len(eval_rows), dtype=np.float64)
+        marg = self._marginal.predict(eval_rows)
+        for i, row in enumerate(eval_rows):
+            if self._row_depends_on_masked(row):
+                out[i] = marg[i]
+            else:
+                out[i] = float(self._rules._rule(row))
+        return out
+
+    @staticmethod
+    def _row_depends_on_masked(row: ScoringRow) -> bool:
+        crop = row.semantic_crop_before
+        h, w = crop.shape
+        cx, cy = h // 2, w // 2
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                rr, cc = cx + dx, cy + dy
+                if 0 <= rr < h and 0 <= cc < w and int(crop[rr, cc]) == MASKED_TILE_ID:
+                    return True
+        return False
+
+
+class InventoryOnlyMLP:
+    """Per-action logistic regression on inventory features only.
+
+    Critical control for the partial-observability story. At extreme
+    masking the trained CNN's spatial channel collapses to a constant
+    "masked" embedding, so anything it learns has to come from
+    action+inventory features. If this *non-spatial* learned baseline
+    matches the trained CNN's Brier under heavy masking, the CNN is not
+    doing world modeling — it's just learning conditional priors that a
+    plain logistic model would also learn.
+
+    Implementation: independent logistic regression per action id, fit
+    on that action's inventory rows only. We hand-roll batch gradient
+    descent with L2 regularization to avoid taking on a sklearn
+    dependency for one baseline. If an action has fewer than 5 examples
+    or only one observed class, we fall back to its marginal rate
+    (same fallback as `MarginalPredictor`).
+    """
+
+    name = "inv-mlp"
+
+    # Hand-rolled logistic regression hyperparams. Inventory features are
+    # unnormalized (some dims range 0-2 for tools, others 0-9 for stacks),
+    # so we standardize per-feature and use small LR with many iters for
+    # stable convergence on the small action subsets.
+    _LR: float = 0.05
+    _N_ITERS: int = 2000
+    _L2: float = 1e-3  # NB: applied to weights only, NOT bias
+
+    def __init__(self) -> None:
+        # Per-action: (weights, bias, feature_mean, feature_std). None means use fallback.
+        self._models: dict[int, tuple[np.ndarray, float, np.ndarray, np.ndarray]] = {}
+        self._fallback_rate: np.ndarray = np.full(len(ACTION_NAMES), 0.5)
+        self._global_rate: float = 0.5
+
+    def fit(self, train_rows: list[ScoringRow]) -> None:
+        actions = np.array([r.action for r in train_rows])
+        labels = np.array([r.success for r in train_rows], dtype=np.float64)
+        invs = np.array([r.inventory_before for r in train_rows], dtype=np.float64)
+        self._global_rate = float(labels.mean()) if labels.size else 0.5
+        for a in range(len(ACTION_NAMES)):
+            mask = actions == a
+            y = labels[mask]
+            x = invs[mask]
+            self._fallback_rate[a] = float(y.mean()) if y.size else self._global_rate
+            if y.size < 5 or len(np.unique(y)) < 2:
+                continue
+            self._models[a] = self._fit_logreg(x, y)
+
+    @classmethod
+    def _fit_logreg(
+        cls, x: np.ndarray, y: np.ndarray
+    ) -> tuple[np.ndarray, float, np.ndarray, np.ndarray]:
+        # Standardize features (zero-mean, unit-variance) for stable GD;
+        # store mean/std so predict can apply the same transform. Skip
+        # constant features (std==0) by treating their std as 1 → centered
+        # to 0 → contribute 0 to the linear function.
+        mu = x.mean(axis=0)
+        sd = x.std(axis=0)
+        sd_safe = np.where(sd > 0, sd, 1.0)
+        x_n = (x - mu) / sd_safe
+        n, d = x_n.shape
+        # Initialize bias to logit(mean(y)) so iter 0 is already calibrated.
+        py = np.clip(y.mean(), 1e-6, 1 - 1e-6)
+        bias = float(np.log(py / (1 - py)))
+        w = np.zeros(d, dtype=np.float64)
+        for _ in range(cls._N_ITERS):
+            z = x_n @ w + bias
+            p = np.where(z >= 0, 1.0 / (1.0 + np.exp(-z)), np.exp(z) / (1.0 + np.exp(z)))
+            err = p - y
+            grad_w = x_n.T @ err / n + cls._L2 * w  # regularize weights only
+            grad_b = float(err.mean())  # bias gets pure log-likelihood gradient
+            w -= cls._LR * grad_w
+            bias -= cls._LR * grad_b
+        return w, bias, mu, sd_safe
+
+    def predict(self, eval_rows: list[ScoringRow]) -> np.ndarray:
+        out = np.empty(len(eval_rows), dtype=np.float64)
+        for i, r in enumerate(eval_rows):
+            mdl = self._models.get(r.action)
+            if mdl is None:
+                out[i] = self._fallback_rate[r.action]
+            else:
+                w, bias, mu, sd = mdl
+                xn = (r.inventory_before.astype(np.float64) - mu) / sd
+                z = float(xn @ w + bias)
+                if z >= 0:
+                    out[i] = 1.0 / (1.0 + np.exp(-z))
+                else:
+                    ez = np.exp(z)
+                    out[i] = ez / (1.0 + ez)
+        return out
