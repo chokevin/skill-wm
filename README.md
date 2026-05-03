@@ -131,8 +131,9 @@ RUNE_NAME=skill-wm-eval-001 SKILL_WM_DATA_RUN=skill-wm-collect-001 \
 All experiments default to `team="experimental"` (the only safe Kueue queue for research on voice-agent-flex). Outputs land under `<ctx.data_dir>/skill-wm/{rollouts,checkpoints,eval}/<run-name>/` — locally that's cwd, on the cluster it's the PVC mount.
 
 **Known gaps before this can actually run on the cluster:**
-- **Repo is private** (`chokevin/skill-wm`). Cluster pods can't `pip install git+https://...` from a private repo without auth provisioned on the pod identity. Two paths to unblock cluster submit: (a) flip to public — `gh repo edit chokevin/skill-wm --visibility public` — fastest if no IP concerns; (b) provision a deploy key or PAT on voice-agent-flex pods. Until then, `--local` and `--dry-run` work; cluster submit will fail at pip-install time. See `TODO(skill-wm-rune-publish)` in `experiments/collect_rollouts/config.py`. Tracked upstream as [aks-ai-runtime#289](https://github.com/azure-management-and-platforms/aks-ai-runtime/issues/289) (`rune-py: ship caller's local source tree to the cluster`).
 - `train_wm` and `eval_baselines` are stubs (raise `NotImplementedError`). Real bodies depend on the `skill-wm-trained-wm` / `skill-wm-llm-baseline` / `skill-wm-eval-metrics` todos.
+
+**Note**: `skill_wm` is `pip install`-able from the cluster via `RUNTIME_PIP`'s `skill-wm @ git+https://github.com/chokevin/skill-wm.git@<ref>`. Repo is currently public to avoid cluster-side auth provisioning. The underlying friction (rune-py shipping single files only) is tracked upstream as [aks-ai-runtime#289](https://github.com/azure-management-and-platforms/aks-ai-runtime/issues/289). When that lands, we can flip the repo back to private and ship the source tree directly via `runtime.working_dir`.
 
 ## Baselines we will compare in T1
 

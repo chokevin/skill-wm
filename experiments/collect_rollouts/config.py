@@ -82,12 +82,9 @@ SKILL_WM_REF = os.environ.get("SKILL_WM_REPO_REF", "main")
 # Override SKILL_WM_REPO_URL / SKILL_WM_REPO_REF per submit:
 #   SKILL_WM_REPO_REF=$(git rev-parse HEAD) make rune-collect
 #
-# CAVEAT: chokevin/skill-wm is a private repo. Cluster pods cannot pull it
-# without auth. Either flip the repo to public:
-#   gh repo edit chokevin/skill-wm --visibility public
-# or arrange a deploy-key/PAT on the cluster's pod identity. For now,
-# --local and --dry-run work; cluster submit will fail at pip-install time
-# until one of these is sorted.
+# The repo is currently public to avoid provisioning cluster-side git auth
+# for chokevin/skill-wm. When aks-ai-runtime#289 lands and we can ship the
+# source tree directly via runtime.working_dir, this can flip back to private.
 RUNTIME_PIP = [
     "crafter==1.8.3",
     "numpy>=2.0,<3",
