@@ -34,7 +34,7 @@ Override knobs (env vars):
     SKILL_WM_MAX_STEPS       max steps per episode        default: 200
     SKILL_WM_POLICY          random | biased_random       default: biased_random
     SKILL_WM_WORKERS         pod count (Ray Train workers) default: 1
-    SKILL_WM_GPUS            per-pod GPUs                  default: 0 (CPU-only is fine)
+    SKILL_WM_GPUS            per-pod GPUs                  default: 1 (wasted; see GPUS comment below)
     RUNE_TEAM                Kueue team routing           default: experimental
     RUNE_PRESET              optional Rune preset
 """
@@ -51,33 +51,50 @@ TOTAL_EPISODES = int(os.environ.get("SKILL_WM_TOTAL_EPISODES", "50"))
 MAX_STEPS = int(os.environ.get("SKILL_WM_MAX_STEPS", "200"))
 POLICY = os.environ.get("SKILL_WM_POLICY", "biased_random")
 WORKERS = int(os.environ.get("SKILL_WM_WORKERS", "1"))
-GPUS = int(os.environ.get("SKILL_WM_GPUS", "0"))
+# Crafter rollouts are CPU-only — gpus=0 is what we'd want. rune-py's
+# @rune.train decorator accepts gpus=0 (no validator), but the rune Go CLI
+# rejects compute.gpus=0 with `want 1..8 (per-worker)` at submit/dry-run
+# time. Contract drift between Python decorator and Go validator. Default
+# to 1 to unblock; this wastes 1 GPU per worker until the upstream contract
+# is fixed (follow-up to aks-ai-runtime#289).
+GPUS = int(os.environ.get("SKILL_WM_GPUS", "1"))
 TEAM = os.environ.get("RUNE_TEAM", "experimental")
 PRESET = os.environ.get("RUNE_PRESET") or None
 
 
-# Cluster-side pip list. Crafter rollouts only need crafter + numpy + tqdm.
+SKILL_WM_REPO = os.environ.get(
+    "SKILL_WM_REPO_URL",
+    "git+https://github.com/chokevin/skill-wm.git",
+)
+SKILL_WM_REF = os.environ.get("SKILL_WM_REPO_REF", "main")
+
+
+# Cluster-side pip list. Crafter rollouts only need crafter + numpy + tqdm,
+# plus skill-wm itself (so the pod can `from skill_wm.data.collect import collect`).
 #
-# TODO(skill-wm-rune-publish): the cluster pod currently has no way to
-# `import skill_wm`. rune-py's --extra-script ships exactly one .py file
-# (this config), so the skill_wm package is not present on the pod.
-#
+# TODO(skill-wm-rune-publish): rune-py's --extra-script ships exactly one .py
+# file (this config), so the skill_wm package is not on the pod by default.
 # Tracked upstream:
 #   https://github.com/azure-management-and-platforms/aks-ai-runtime/issues/289
 #   ("rune-py: ship caller's local source tree to the cluster")
 #
-# Until that lands, two workarounds: publish the repo and add it here, e.g.:
+# Workaround: pin a published commit of chokevin/skill-wm into RUNTIME_PIP.
+# Override SKILL_WM_REPO_URL / SKILL_WM_REPO_REF per submit:
+#   SKILL_WM_REPO_REF=$(git rev-parse HEAD) make rune-collect
 #
-#     "skill-wm @ git+https://github.com/<org>/skill-wm.git@<sha>",
-#
-# or run a private PyPI. For now --local and --dry-run work; cluster submit
-# will fail at import time on the pod with a clear ImportError.
+# CAVEAT: chokevin/skill-wm is a private repo. Cluster pods cannot pull it
+# without auth. Either flip the repo to public:
+#   gh repo edit chokevin/skill-wm --visibility public
+# or arrange a deploy-key/PAT on the cluster's pod identity. For now,
+# --local and --dry-run work; cluster submit will fail at pip-install time
+# until one of these is sorted.
 RUNTIME_PIP = [
     "crafter==1.8.3",
     "numpy>=2.0,<3",
     "tqdm>=4.66",
     "imageio>=2.37",
     "pyyaml>=6",
+    f"skill-wm @ {SKILL_WM_REPO}@{SKILL_WM_REF}",
 ]
 
 
