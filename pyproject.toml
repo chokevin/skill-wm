@@ -2,17 +2,27 @@
 name = "skill-wm"
 version = "0.1.0"
 description = "Prediction-only testbed for learned world models vs LLM-as-WM in Crafter."
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "crafter>=1.8.3",
-    "imageio>=2.37.3",
-    "numpy>=2.4.4",
+    "numpy>=2.0",
+    "tqdm>=4.66",
+]
+
+# Optional extras for downstream stages. Cluster collect jobs only need
+# the core deps above. Local dev pulls everything via uv sync's dev group.
+[project.optional-dependencies]
+llm = [
     "openai>=2.33.0",
     "pydantic>=2.13.3",
     "python-dotenv>=1.2.2",
-    "pyyaml>=6.0.3",
-    "torch>=2.11.0",
-    "tqdm>=4.67.3",
+]
+train = [
+    "torch>=2.4",
+]
+viz = [
+    "imageio>=2.37",
+    "pyyaml>=6",
 ]
 
 # Note: rune-py is intentionally NOT listed here. uv resolves dependency
@@ -25,6 +35,7 @@ dependencies = [
 dev = [
     "pytest>=9.0.3",
     "ruff>=0.15.12",
+    "skill-wm[llm,train,viz]",
 ]
 
 [tool.pytest.ini_options]
@@ -33,7 +44,7 @@ addopts = "-q"
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
