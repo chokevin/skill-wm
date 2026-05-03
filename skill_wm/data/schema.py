@@ -100,7 +100,12 @@ def action_success(
         return any(ach_a[k] > ach_b[k] for k in ach_a)
 
     if action_name == "sleep":
-        return inv_a.get("energy", 0) > inv_b.get("energy", 0)
+        # Crafter's sleep takes ticks: energy increases only over multiple
+        # sleeping steps, and goes nowhere if you're already at max. The
+        # one-step "did the intent take effect" signal is whether the player
+        # is in the sleeping state after the action. (`info_after['sleeping']`
+        # is harvested from env._player by the wrapper.)
+        return bool(info_after.get("sleeping", False))
 
     # noop: no semantic intent; we mark False so it doesn't pollute success rate.
     return False
@@ -147,11 +152,15 @@ class Transition:
     # State BEFORE the action (compact features, no pixels here)
     inventory_before: dict[str, int]
     player_pos_before: tuple[int, int]
+    facing_before: tuple[int, int]
+    sleeping_before: bool
     semantic_crop_before: np.ndarray = field(repr=False)
 
     # State AFTER the action
     inventory_after: dict[str, int]
     player_pos_after: tuple[int, int]
+    facing_after: tuple[int, int]
+    sleeping_after: bool
     semantic_crop_after: np.ndarray = field(repr=False)
 
     # Predictor targets (computed once, stored for cheap eval)
@@ -171,4 +180,6 @@ class Transition:
         d["vitals_delta"] = self.vitals_delta.tolist()
         d["player_pos_before"] = list(self.player_pos_before)
         d["player_pos_after"] = list(self.player_pos_after)
+        d["facing_before"] = list(self.facing_before)
+        d["facing_after"] = list(self.facing_after)
         return d

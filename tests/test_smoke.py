@@ -108,3 +108,47 @@ def test_action_success_definition_basics():
         )
         is False
     )
+
+
+def test_sleep_success_uses_sleeping_flag_not_energy_delta():
+    """Crafter sleep takes ticks; energy rarely changes in one step. The
+    intent-took-effect signal is `info_after['sleeping']`, not `energy_after >
+    energy_before` (which biases the label toward almost-always-False)."""
+    inv_full = {k: 0 for k in ITEM_KEYS} | {k: 9 for k in VITAL_KEYS}
+    info_before = {
+        "inventory": inv_full,
+        "player_pos": np.array([5, 5]),
+        "achievements": {},
+        "sleeping": False,
+    }
+    # sleep entered, energy unchanged: this is success.
+    info_after_entered = {**info_before, "sleeping": True}
+    assert action_success("sleep", info_before, info_after_entered) is True
+    # sleep tried, never entered (e.g. enemy nearby): failure.
+    info_after_failed = {**info_before, "sleeping": False}
+    assert action_success("sleep", info_before, info_after_failed) is False
+
+
+def test_transition_carries_facing_and_sleeping(tmp_path: Path):
+    """Wrapper must populate facing/sleeping into both Transition and the npz."""
+    stats = collect(
+        out_dir=tmp_path,
+        num_episodes=1,
+        max_steps_per_episode=30,
+        policy_name="biased_random",
+        seed_start=0,
+    )
+    assert stats["transitions"] > 0
+    files = sorted(tmp_path.glob("ep_*.npz"))
+    loaded = np.load(files[0])
+    for k in ("facing_before", "facing_after", "sleeping_before", "sleeping_after"):
+        assert k in loaded, f"missing {k}"
+    n = loaded["action"].shape[0]
+    assert loaded["facing_before"].shape == (n, 2)
+    assert loaded["facing_after"].shape == (n, 2)
+    assert loaded["sleeping_before"].shape == (n,)
+    assert loaded["sleeping_after"].shape == (n,)
+    # Crafter facing is one of the four cardinal unit vectors.
+    valid = {(-1, 0), (1, 0), (0, -1), (0, 1)}
+    for f in loaded["facing_before"]:
+        assert tuple(int(x) for x in f) in valid

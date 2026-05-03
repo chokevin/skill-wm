@@ -79,14 +79,24 @@ class CrafterWrapper:
     def action_names(self) -> tuple[str, ...]:
         return ACTION_NAMES
 
+    def _harvest_player_state(self, info: dict[str, Any]) -> dict[str, Any]:
+        """Inject `facing` and `sleeping` into the info dict.
+
+        Crafter's public `info` carries inventory/achievements/semantic/player_pos
+        but not facing direction or sleep state — those are only on the internal
+        `env._player`. We snapshot them at call time and treat them as part of
+        the standard info dict from then on.
+
+        `facing` is a unit direction tuple in env coordinates (e.g. (0, 1));
+        `sleeping` is a bool. Both are pure point-in-time observations of
+        the player's state, safe to read either before or after a step.
+        """
+        info["facing"] = tuple(int(x) for x in self.env._player.facing)
+        info["sleeping"] = bool(self.env._player.sleeping)
+        return info
+
     def reset(self, episode: int) -> tuple[np.ndarray, dict[str, Any]]:
         obs = self.env.reset()
-        # crafter.reset doesn't return info; do a noop step is wrong, instead
-        # synthesize a starting info dict from a single noop... but that
-        # mutates state. Better: peek into env._world / env._player.
-        # Cheapest correct path: do a noop step that we *don't* count.
-        # Since reset state has full vitals, no items, and no achievements,
-        # we can synthesize the info ourselves.
         info = self._synth_initial_info()
         self._episode = episode
         self._step = 0
@@ -95,15 +105,9 @@ class CrafterWrapper:
 
     def _synth_initial_info(self) -> dict[str, Any]:
         """Build the info dict that should match Crafter's post-step info shape."""
-        # Crafter exposes its world/player via private attrs; use a cheap noop
-        # to harvest the ground-truth starting info instead.
-        # We reset again first to ensure determinism.
-        # NOTE: crafter.Env.reset returns obs only, so we step noop once and
-        # treat its info as the *initial* info for episode bookkeeping. The
-        # collector below ignores this synthesized step.
         action_noop = ACTION_NAMES.index("noop")
         _, _, _, info = self.env.step(action_noop)
-        return info
+        return self._harvest_player_state(info)
 
     def step(self, action: int) -> tuple[Transition, np.ndarray, dict[str, Any], bool]:
         """Take one action and return a fully-populated Transition."""
@@ -111,6 +115,7 @@ class CrafterWrapper:
             raise RuntimeError("Call reset() before step().")
         info_before = copy.deepcopy(self._last_info)
         obs_after, reward, done, info_after = self.env.step(action)
+        info_after = self._harvest_player_state(info_after)
         action_name = ACTION_NAMES[action]
 
         crop_before = crop_semantic(info_before["semantic"], info_before["player_pos"])
@@ -124,9 +129,13 @@ class CrafterWrapper:
             action_name=action_name,
             inventory_before=dict(info_before["inventory"]),
             player_pos_before=tuple(int(x) for x in info_before["player_pos"]),
+            facing_before=tuple(int(x) for x in info_before["facing"]),
+            sleeping_before=bool(info_before["sleeping"]),
             semantic_crop_before=crop_before,
             inventory_after=dict(info_after["inventory"]),
             player_pos_after=tuple(int(x) for x in info_after["player_pos"]),
+            facing_after=tuple(int(x) for x in info_after["facing"]),
+            sleeping_after=bool(info_after["sleeping"]),
             semantic_crop_after=crop_after,
             success=action_success(action_name, info_before, info_after),
             inventory_delta=inventory_delta(info_before["inventory"], info_after["inventory"]),
