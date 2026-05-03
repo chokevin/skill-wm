@@ -79,6 +79,8 @@ uv run python -m skill_wm.eval.run --data data/rollouts/smoke \
     --baselines random marginal precondition                   # score
 uv run python -m skill_wm.agent.run --train-data data/rollouts/collect-002-combined \
     --policies biased_random scripted_craft precondition-greedy trained-greedy
+uv run python -m skill_wm.agent.run --train-data data/rollouts/collect-002-combined \
+    --policies mixed precondition-rerank-mixed trained-rerank-mixed
 ```
 
 Optional, for the LLM-as-WM baseline (later):

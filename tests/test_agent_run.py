@@ -60,7 +60,8 @@ def test_predictor_policy_rerank_uses_candidate_subset() -> None:
     policy = PredictorPolicy(
         name="dummy-rerank-biased",
         predictor=_DummyPredictor(),
-        mode="rerank-biased",
+        mode="rerank",
+        proposal="biased",
         num_candidates=1,
     )
     action = policy.act(np.random.default_rng(0), env, _info(), episode=0, step=0)

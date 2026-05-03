@@ -1,4 +1,5 @@
-.PHONY: help install sync test lint fix format check smoke collect-small collect-full eval-local agent-pilot clean all \
+.PHONY: help install sync test lint fix format check smoke collect-small collect-full eval-local \
+        agent-pilot agent-goal-pilot clean all \
         rune-setup rune-collect-local rune-collect rune-collect-dry rune-train-dry rune-eval-dry
 
 help:
@@ -15,6 +16,7 @@ help:
 	@echo "  eval-local    run baselines on data/rollouts/smoke (no LLM)"
 	@echo "  eval-llm      run baselines + llm-zero (needs OPENAI_API_KEY)"
 	@echo "  agent-pilot   run a small T2 live-agent pilot (trains local WM)"
+	@echo "  agent-goal-pilot  run T2 mixed-proposer rerank pilot"
 	@echo "  clean         remove caches and rollouts"
 	@echo "  all           install + check + smoke"
 	@echo ""
@@ -66,6 +68,13 @@ agent-pilot:
 		--policies biased_random scripted_craft precondition-greedy trained-greedy trained-rerank-biased \
 		--episodes 10 --max-steps 200 --seed-start 20000 \
 		--out eval-results-agent/t2-pilot-10ep.json
+
+agent-goal-pilot:
+	uv run python -m skill_wm.agent.run \
+		--train-data data/rollouts/collect-002-combined \
+		--policies mixed scripted_craft precondition-rerank-mixed trained-rerank-mixed \
+		--episodes 10 --max-steps 200 --seed-start 21000 \
+		--out eval-results-agent/t2-goal-rerank-10ep.json
 
 clean:
 	rm -rf .pytest_cache .ruff_cache data/rollouts

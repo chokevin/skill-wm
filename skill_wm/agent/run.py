@@ -11,9 +11,9 @@ The harness supports two decision modes:
    `scripted_craft`, `mixed`, ...).
 2. Predictor-scored policies:
    - `*-greedy`: score all 17 actions and take argmax P(success).
-   - `*-rerank-biased`: sample K candidates from `biased_random`, score them,
-     and take the best. This mimics "LLM proposes a few plausible actions; WM
-     filters/reranks" without spending LLM calls.
+   - `*-rerank-<proposal>`: sample K candidates from a proposal policy, score
+     them, and take the best. This mimics "LLM/planner proposes a few plausible
+     actions; WM filters/reranks" without spending LLM calls.
 
 The key metric is not just per-step success. A one-step success model can choose
 safe, locally-successful actions forever while making no long-horizon progress.
@@ -94,14 +94,16 @@ class PredictorPolicy:
         predictor: Predictor,
         mode: str,
         *,
+        proposal: str = "biased_random",
         num_candidates: int = 8,
         epsilon: float = 0.0,
     ):
-        if mode not in {"greedy", "rerank-biased"}:
+        if mode not in {"greedy", "rerank"}:
             raise ValueError(f"unknown predictor policy mode {mode!r}")
         self.name = name
         self.predictor = predictor
         self.mode = mode
+        self.proposal = _canonical_proposal_name(proposal)
         self.num_candidates = num_candidates
         self.epsilon = epsilon
 
@@ -128,16 +130,28 @@ class PredictorPolicy:
         if self.mode == "greedy":
             return list(range(env.num_actions))
 
-        # Sample K proposal actions from the cheap "LLM stand-in" policy,
+        # Sample K proposal actions from the cheap "LLM/planner stand-in" policy,
         # preserving order and deduplicating. Always keep at least one action.
+        proposer = POLICIES[self.proposal]
         seen: set[int] = set()
         out: list[int] = []
         for _ in range(max(1, self.num_candidates)):
-            a = int(biased_random_policy(rng, env.num_actions, info))
+            a = int(proposer(rng, env.num_actions, info))
             if a not in seen:
                 seen.add(a)
                 out.append(a)
         return out or [0]
+
+
+def _canonical_proposal_name(name: str) -> str:
+    aliases = {
+        "biased": "biased_random",
+        "scripted": "scripted_craft",
+    }
+    out = aliases.get(name, name)
+    if out not in POLICIES:
+        raise ValueError(f"unknown proposal policy {name!r}; choices={sorted(POLICIES)}")
+    return out
 
 
 def _inventory_array(info: dict) -> np.ndarray:
@@ -277,23 +291,40 @@ def build_agent_policy(
     if name in POLICIES:
         return RolloutPolicy(name)
 
-    for suffix, mode in (("-greedy", "greedy"), ("-rerank-biased", "rerank-biased")):
-        if name.endswith(suffix):
-            kind = name[: -len(suffix)]
-            if train_rows is None:
-                raise ValueError(f"{name} requires --train-data")
-            if kind not in predictor_cache:
-                predictor = _build_predictor(kind)
-                log.info("fitting predictor kind %s on %d rows", kind, len(train_rows))
-                predictor.fit(train_rows)
-                predictor_cache[kind] = predictor
-            return PredictorPolicy(
-                name=name,
-                predictor=predictor_cache[kind],
-                mode=mode,
-                num_candidates=args.num_candidates,
-                epsilon=args.epsilon,
-            )
+    if name.endswith("-greedy"):
+        kind = name[: -len("-greedy")]
+        if train_rows is None:
+            raise ValueError(f"{name} requires --train-data")
+        if kind not in predictor_cache:
+            predictor = _build_predictor(kind)
+            log.info("fitting predictor kind %s on %d rows", kind, len(train_rows))
+            predictor.fit(train_rows)
+            predictor_cache[kind] = predictor
+        return PredictorPolicy(
+            name=name,
+            predictor=predictor_cache[kind],
+            mode="greedy",
+            num_candidates=args.num_candidates,
+            epsilon=args.epsilon,
+        )
+
+    if "-rerank-" in name:
+        kind, proposal = name.split("-rerank-", 1)
+        if train_rows is None:
+            raise ValueError(f"{name} requires --train-data")
+        if kind not in predictor_cache:
+            predictor = _build_predictor(kind)
+            log.info("fitting predictor kind %s on %d rows", kind, len(train_rows))
+            predictor.fit(train_rows)
+            predictor_cache[kind] = predictor
+        return PredictorPolicy(
+            name=name,
+            predictor=predictor_cache[kind],
+            mode="rerank",
+            proposal=proposal,
+            num_candidates=args.num_candidates,
+            epsilon=args.epsilon,
+        )
 
     raise ValueError(f"unknown agent policy {name!r}")
 
@@ -355,7 +386,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "agent policies: rollout policies {random,biased_random,scripted_craft,mixed}; "
             "or predictor policies like trained-greedy, precondition-greedy, "
-            "trained-rerank-biased, precondition-rerank-biased"
+            "trained-rerank-biased, trained-rerank-mixed, precondition-rerank-scripted"
         ),
     )
     p.add_argument("--episodes", type=int, default=20)
