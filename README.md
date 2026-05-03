@@ -2,7 +2,7 @@
 
 A testbed for the question: **can a small, separately trained world model improve LLM agents — or are LLMs already good enough as their own world model?**
 
-This repo is intentionally small. It is the **prediction-only smell test** for the thesis direction "learned world models can make LLM agents more reliable on long-horizon tasks." It deliberately avoids the agent loop, deliberately avoids Minecraft, and deliberately avoids JEPA — those come only after the prediction premise is validated here.
+This repo is intentionally small. It started as the **prediction-only smell test** for the thesis direction "learned world models can make LLM agents more reliable on long-horizon tasks." T1 validated the prediction premise, so the repo now also contains a minimal **T2 live-agent harness** for testing whether one-step WM scores actually improve Crafter behavior. It still deliberately avoids Minecraft and JEPA — those come only after the Crafter agent result is understood.
 
 ## Thesis being tested
 
@@ -23,7 +23,7 @@ If the answer is yes, we have a foundation to build on.
 | **T1** | full Crafter skill set, all baselines, calibration metrics | go/no-go gate for the thesis |
 | **T2** | LLM agent uses WM scores at decision time | does better prediction translate to better agents? |
 
-We are currently building toward T1.
+T1 is complete; the active work is T2.
 
 ## What's in here
 
@@ -41,6 +41,8 @@ skill_wm/
     dataset.py            # ScoringRow loader, seed-disjoint split, manifest
     metrics.py            # Brier (headline), ECE (adaptive bins, gated by support)
     run.py                # CLI: load -> split -> fit -> predict -> table
+  agent/
+    run.py                # T2 live-agent loop: baseline policies + WM reranking
 tests/
   test_smoke.py           # env + schema + crop alignment
   test_eval_dataset_metrics.py
@@ -75,6 +77,8 @@ uv run ruff check .                                            # lint
 uv run python -m skill_wm.data.collect --episodes 50           # collect rollouts
 uv run python -m skill_wm.eval.run --data data/rollouts/smoke \
     --baselines random marginal precondition                   # score
+uv run python -m skill_wm.agent.run --train-data data/rollouts/collect-002-combined \
+    --policies biased_random scripted_craft precondition-greedy trained-greedy
 ```
 
 Optional, for the LLM-as-WM baseline (later):
@@ -178,9 +182,9 @@ Primary metric: **calibrated success prediction on held-out world seeds** (Brier
 
 ## What this repo is NOT
 
-- not an agent
+- not a full LLM agent yet (the current T2 harness uses local proposal policies and WM reranking)
 - not a Minecraft project
 - not a JEPA paper
 - not a publishable result on its own
 
-It is a falsifiability harness for one claim. Once T1 finishes, we either advance to T2 with a working WM, or we kill the thesis cheaply.
+It is a falsifiability harness for one claim at a time. T1 showed trained WMs beat LLM-as-WM prompting on calibration; T2 now asks whether that calibration translates into better live-agent behavior.

@@ -1,0 +1,224 @@
+{
+  "train_data": "data/rollouts/collect-002-combined",
+  "episodes": 10,
+  "max_steps": 200,
+  "seed_start": 20000,
+  "policies": [
+    "biased_random",
+    "scripted_craft",
+    "precondition-greedy",
+    "trained-greedy",
+    "trained-rerank-biased"
+  ],
+  "num_candidates": 8,
+  "epsilon": 0.0,
+  "results": {
+    "biased_random": {
+      "episodes": 10,
+      "transitions": 1500,
+      "successes": 560,
+      "success_rate": 0.37333333333333335,
+      "total_reward": 19.000000000000007,
+      "avg_reward_per_episode": 1.9000000000000008,
+      "total_achievements": 28,
+      "avg_achievements_per_episode": 2.8,
+      "unique_achievements": 6,
+      "achievement_counts": {
+        "collect_drink": 3,
+        "collect_sapling": 7,
+        "collect_wood": 4,
+        "place_plant": 7,
+        "place_table": 1,
+        "wake_up": 6
+      },
+      "action_counts": {
+        "do": 211,
+        "make_iron_pickaxe": 54,
+        "make_iron_sword": 52,
+        "make_stone_pickaxe": 53,
+        "make_stone_sword": 59,
+        "make_wood_pickaxe": 51,
+        "make_wood_sword": 71,
+        "move_down": 170,
+        "move_left": 182,
+        "move_right": 157,
+        "move_up": 166,
+        "noop": 33,
+        "place_furnace": 48,
+        "place_plant": 50,
+        "place_stone": 55,
+        "place_table": 61,
+        "sleep": 27
+      },
+      "action_success_rate": {
+        "do": 0.17061611374407584,
+        "make_iron_pickaxe": 0.0,
+        "make_iron_sword": 0.0,
+        "make_stone_pickaxe": 0.0,
+        "make_stone_sword": 0.0,
+        "make_wood_pickaxe": 0.0,
+        "make_wood_sword": 0.0,
+        "move_down": 0.6882352941176471,
+        "move_left": 0.6923076923076923,
+        "move_right": 0.7834394904458599,
+        "move_up": 0.7590361445783133,
+        "noop": 0.0,
+        "place_furnace": 0.0,
+        "place_plant": 0.22,
+        "place_stone": 0.0,
+        "place_table": 0.03278688524590164,
+        "sleep": 0.7037037037037037
+      }
+    },
+    "scripted_craft": {
+      "episodes": 10,
+      "transitions": 1707,
+      "successes": 242,
+      "success_rate": 0.14176918570591682,
+      "total_reward": 22.300000000000026,
+      "avg_reward_per_episode": 2.2300000000000026,
+      "total_achievements": 29,
+      "avg_achievements_per_episode": 2.9,
+      "unique_achievements": 4,
+      "achievement_counts": {
+        "collect_wood": 10,
+        "make_wood_pickaxe": 4,
+        "make_wood_sword": 5,
+        "place_table": 10
+      },
+      "action_counts": {
+        "do": 64,
+        "make_wood_pickaxe": 10,
+        "make_wood_sword": 14,
+        "move_down": 161,
+        "move_left": 337,
+        "move_right": 655,
+        "move_up": 447,
+        "place_table": 19
+      },
+      "action_success_rate": {
+        "do": 1.0,
+        "make_wood_pickaxe": 1.0,
+        "make_wood_sword": 1.0,
+        "move_down": 0.20496894409937888,
+        "move_left": 0.08605341246290801,
+        "move_right": 0.04732824427480916,
+        "move_up": 0.09395973154362416,
+        "place_table": 1.0
+      }
+    },
+    "precondition-greedy": {
+      "episodes": 10,
+      "transitions": 1728,
+      "successes": 1149,
+      "success_rate": 0.6649305555555556,
+      "total_reward": 16.80000000000001,
+      "avg_reward_per_episode": 1.680000000000001,
+      "total_achievements": 25,
+      "avg_achievements_per_episode": 2.5,
+      "unique_achievements": 4,
+      "achievement_counts": {
+        "collect_drink": 4,
+        "collect_wood": 8,
+        "place_table": 3,
+        "wake_up": 10
+      },
+      "action_counts": {
+        "do": 37,
+        "move_down": 338,
+        "move_left": 319,
+        "move_right": 323,
+        "move_up": 310,
+        "place_table": 83,
+        "sleep": 318
+      },
+      "action_success_rate": {
+        "do": 0.7297297297297297,
+        "move_down": 0.7988165680473372,
+        "move_left": 0.7711598746081505,
+        "move_right": 0.7987616099071208,
+        "move_up": 0.8096774193548387,
+        "place_table": 0.04819277108433735,
+        "sleep": 0.29245283018867924
+      }
+    },
+    "trained-greedy": {
+      "episodes": 10,
+      "transitions": 1654,
+      "successes": 1566,
+      "success_rate": 0.9467956469165659,
+      "total_reward": -4.000000000000001,
+      "avg_reward_per_episode": -0.4000000000000001,
+      "total_achievements": 4,
+      "avg_achievements_per_episode": 0.4,
+      "unique_achievements": 3,
+      "achievement_counts": {
+        "collect_drink": 1,
+        "collect_wood": 1,
+        "wake_up": 2
+      },
+      "action_counts": {
+        "do": 14,
+        "move_down": 621,
+        "move_left": 156,
+        "move_right": 169,
+        "move_up": 651,
+        "sleep": 43
+      },
+      "action_success_rate": {
+        "do": 0.14285714285714285,
+        "move_down": 0.9082125603864735,
+        "move_left": 1.0,
+        "move_right": 0.9467455621301775,
+        "move_up": 0.9938556067588326,
+        "sleep": 0.8604651162790697
+      }
+    },
+    "trained-rerank-biased": {
+      "episodes": 10,
+      "transitions": 1809,
+      "successes": 1599,
+      "success_rate": 0.8839137645107794,
+      "total_reward": 9.799999999999997,
+      "avg_reward_per_episode": 0.9799999999999998,
+      "total_achievements": 17,
+      "avg_achievements_per_episode": 1.7,
+      "unique_achievements": 5,
+      "achievement_counts": {
+        "collect_drink": 4,
+        "collect_sapling": 1,
+        "collect_wood": 6,
+        "place_table": 1,
+        "wake_up": 5
+      },
+      "action_counts": {
+        "do": 60,
+        "make_stone_sword": 1,
+        "make_wood_pickaxe": 2,
+        "make_wood_sword": 4,
+        "move_down": 460,
+        "move_left": 317,
+        "move_right": 368,
+        "move_up": 568,
+        "place_plant": 2,
+        "place_stone": 2,
+        "place_table": 2,
+        "sleep": 23
+      },
+      "action_success_rate": {
+        "do": 0.25,
+        "make_stone_sword": 0.0,
+        "make_wood_pickaxe": 0.0,
+        "make_wood_sword": 0.0,
+        "move_down": 0.9565217391304348,
+        "move_left": 0.9305993690851735,
+        "move_right": 0.8369565217391305,
+        "move_up": 0.9225352112676056,
+        "place_plant": 0.0,
+        "place_stone": 0.0,
+        "place_table": 0.5,
+        "sleep": 0.6956521739130435
+      }
+    }
+  }
+}
