@@ -36,6 +36,7 @@ skill_wm/
     baselines.py          # Random / Marginal / Precondition predictors
     state_text.py         # Crafter state -> ASCII prompt for the LLM
     llm_wm.py             # OpenAI client + logprob-based p(success)
+    trained_wm.py         # small CNN+MLP trained on (crop, inv, action) -> p(success)
   eval/
     dataset.py            # ScoringRow loader, seed-disjoint split, manifest
     metrics.py            # Brier (headline), ECE (adaptive bins, gated by support)

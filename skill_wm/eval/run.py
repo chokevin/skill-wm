@@ -46,6 +46,11 @@ def build_baseline(name: str, llm_cache: Path | None) -> Predictor:
         return MarginalPredictor()
     if name == "precondition":
         return PreconditionPredictor()
+    if name == "trained":
+        # Lazy import: torch only required if the trained baseline is used.
+        from skill_wm.models.trained_wm import TrainedWM
+
+        return TrainedWM()
     if name == "llm-zero":
         # Lazy import so non-LLM runs don't need openai installed.
         from skill_wm.models.llm_wm import LLMWorldModel, make_default_client_or_skip
@@ -124,7 +129,7 @@ def parse_args() -> argparse.Namespace:
         "--baselines",
         nargs="+",
         default=["random", "marginal", "precondition"],
-        choices=["random", "marginal", "precondition", "llm-zero"],
+        choices=["random", "marginal", "precondition", "trained", "llm-zero"],
         help="which baselines to score (llm-zero needs OPENAI_API_KEY)",
     )
     p.add_argument("--train-frac", type=float, default=0.6, help="seed-disjoint train fraction")
