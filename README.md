@@ -131,6 +131,8 @@ RUNE_NAME=skill-wm-eval-001 SKILL_WM_DATA_RUN=skill-wm-collect-001 \
 All experiments default to `team="experimental"` (the only safe Kueue queue for research on voice-agent-flex). Outputs land under `<ctx.data_dir>/skill-wm/{rollouts,checkpoints,eval}/<run-name>/` — locally that's cwd, on the cluster it's the PVC mount.
 
 **Known gaps before this can actually run on the cluster:**
+- **No git remote yet.** `git remote -v` is empty — the publish workaround literally requires the repo to exist somewhere `pip install git+https://…` can reach. First step before any cluster submit.
+- **Azure subscription context.** voice-agent-flex lives in a specific sub; if your default `az account show` is on a different sub, kubectl will fetch a token but the API server will 403. Set `SKILL_WM_SUBSCRIPTION` per `.env.example`, then run `bin/setup.sh`.
 - `skill_wm` package needs to be `pip install`-able from the cluster (publish the repo and add `"skill-wm @ git+https://..."` to `RUNTIME_PIP`). Until then, `--local` and `--dry-run` work; cluster submit will fail with `ImportError` on the first pod. See `TODO(skill-wm-rune-publish)` in `experiments/collect_rollouts/config.py`. Tracked upstream as [aks-ai-runtime#289](https://github.com/azure-management-and-platforms/aks-ai-runtime/issues/289) (`rune-py: ship caller's local source tree to the cluster`).
 - `train_wm` and `eval_baselines` are stubs (raise `NotImplementedError`). Real bodies depend on the `skill-wm-trained-wm` / `skill-wm-llm-baseline` / `skill-wm-eval-metrics` todos.
 
