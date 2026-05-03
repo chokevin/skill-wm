@@ -3,6 +3,7 @@ import numpy as np
 
 from skill_wm.data.collect import (
     POLICIES,
+    _move_toward_target,
     biased_random_policy,
     mixed_policy,
     random_policy,
@@ -88,6 +89,18 @@ def test_scripted_places_table_only_with_two_wood():
     info["inventory"] = {"wood": 2}
     a = scripted_craft_policy(rng, NUM_ACTIONS, info)
     assert ACTION_NAMES[a] == "place_table"
+
+
+def test_move_toward_target_paths_around_blocked_direct_route():
+    sem = np.full((15, 15), 2, dtype=np.uint8)  # grass
+    pos = np.array([7, 7])
+    sem[7, 7] = 13  # player
+    sem[8, 7] = 3  # stone blocks the direct route to coal
+    sem[9, 7] = 8  # coal target
+    rng = np.random.default_rng(0)
+    action = _move_toward_target(rng, sem, pos, {8})
+    assert action is not None
+    assert ACTION_NAMES[action] != "move_right"
 
 
 def test_mixed_calls_both_branches():

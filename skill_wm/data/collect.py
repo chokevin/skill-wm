@@ -16,6 +16,7 @@ Transitions are written one episode per .npz file under data/rollouts/.
 from __future__ import annotations
 
 import argparse
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -136,6 +137,87 @@ def _move_toward(rng: np.random.Generator, dx: int, dy: int) -> int:
     return _aidx("move_down" if dy > 0 else "move_up")
 
 
+def _bfs_step_to_adjacent_target(
+    sem: np.ndarray,
+    pos: np.ndarray,
+    target_ids: set[int],
+    max_expansions: int = 4096,
+) -> int | None:
+    """Return a move action that walks toward a cell adjacent to `target_ids`.
+
+    The policy has access to Crafter's full semantic map, so use it honestly:
+    path around obstacles instead of repeatedly walking into stone/water while
+    trying to reach coal or iron. If already adjacent to a target, return the
+    move action toward the target; Crafter sets facing before attempting the
+    blocked move, so the next `do` will interact with that target.
+    """
+    h, w = sem.shape
+    start = (int(pos[0]), int(pos[1]))
+
+    def in_bounds(cell: tuple[int, int]) -> bool:
+        x, y = cell
+        return 0 <= x < h and 0 <= y < w
+
+    def has_adjacent_target(cell: tuple[int, int]) -> tuple[int, int] | None:
+        x, y = cell
+        for dx, dy in _DIRS:
+            n = (x + dx, y + dy)
+            if in_bounds(n) and int(sem[n]) in target_ids:
+                return (dx, dy)
+        return None
+
+    # If already next to the target, face it. The move may fail because the
+    # resource/table/furnace is blocking, but facing changes; next tick `do`
+    # or `make_*` can use that adjacency.
+    face_dir = has_adjacent_target(start)
+    if face_dir is not None:
+        return _aidx(_DIR_TO_MOVE[face_dir])
+
+    q: deque[tuple[int, int]] = deque([start])
+    parent: dict[tuple[int, int], tuple[int, int] | None] = {start: None}
+    expansions = 0
+
+    while q and expansions < max_expansions:
+        cur = q.popleft()
+        expansions += 1
+        if cur != start and has_adjacent_target(cur) is not None:
+            # Reconstruct first step from start -> cur.
+            node = cur
+            prev = parent[node]
+            while prev is not None and prev != start:
+                node = prev
+                prev = parent[node]
+            dx = node[0] - start[0]
+            dy = node[1] - start[1]
+            return _aidx(_DIR_TO_MOVE[(dx, dy)])
+
+        for dx, dy in _DIRS:
+            nxt = (cur[0] + dx, cur[1] + dy)
+            if nxt in parent or not in_bounds(nxt):
+                continue
+            if int(sem[nxt]) not in _WALKABLE_IDS:
+                continue
+            parent[nxt] = cur
+            q.append(nxt)
+    return None
+
+
+def _move_toward_target(
+    rng: np.random.Generator,
+    sem: np.ndarray,
+    pos: np.ndarray,
+    target_ids: set[int],
+    max_radius: int = 30,
+) -> int | None:
+    step = _bfs_step_to_adjacent_target(sem, pos, target_ids)
+    if step is not None:
+        return step
+    offset = _nearest_target(sem, pos, target_ids, max_radius=max_radius)
+    if offset is None:
+        return None
+    return _move_toward(rng, *offset)
+
+
 def scripted_craft_policy(
     rng: np.random.Generator, num_actions: int, info: dict[str, Any] | None = None
 ) -> int:
@@ -149,15 +231,12 @@ def scripted_craft_policy(
     examples to score against.
 
     Priority (highest first):
-      1. ``make_iron_*`` if at table+furnace with wood+coal+iron in inventory.
-      2. ``make_stone_*`` if at table with wood+stone.
-      3. ``make_wood_*`` if at table with wood.
-      4. ``place_table`` if we have wood and no table within crop reach.
-      5. ``place_furnace`` if at table with stone and no furnace within reach.
-      6. ``do`` on the facing tile if it's collectible and we have the tool.
-      7. Navigate one step toward the nearest interesting tile in priority
-         tree > stone > coal > iron (gated by tool requirements).
-      8. Fallback: biased random.
+      1. Build the minimum toolchain first:
+         table -> wood_pickaxe -> furnace -> stone_pickaxe -> coal/iron.
+      2. Only make swords after the pickaxe/furnace prerequisites are safe.
+      3. Use BFS over the full semantic map to reach resource-adjacent cells
+         rather than walking straight into obstacles.
+      4. Fallback: biased random.
     """
     if info is None or "semantic" not in info or "player_pos" not in info:
         # Reset-time call before the first env.step() — fall back.
@@ -172,27 +251,39 @@ def scripted_craft_policy(
     adj = _adjacent_tile_ids(sem, pos)
     at_table = _TILE_TABLE in adj
     at_furnace = _TILE_FURNACE in adj
+    has_table = _nearest_target(sem, pos, {_TILE_TABLE}, max_radius=64) is not None
+    has_furnace = _nearest_target(sem, pos, {_TILE_FURNACE}, max_radius=64) is not None
 
-    if (
-        at_table
-        and at_furnace
-        and inv.get("wood", 0) >= 1
-        and inv.get("coal", 0) >= 1
-        and inv.get("iron", 0) >= 1
-    ):
-        return _aidx(rng.choice(["make_iron_pickaxe", "make_iron_sword"]))
-    if at_table and inv.get("wood", 0) >= 1 and inv.get("stone", 0) >= 1:
-        return _aidx(rng.choice(["make_stone_pickaxe", "make_stone_sword"]))
-    if at_table and inv.get("wood", 0) >= 1:
-        return _aidx(rng.choice(["make_wood_pickaxe", "make_wood_sword"]))
+    if at_table and at_furnace and inv.get("wood", 0) >= 1 and inv.get("coal", 0) >= 1:
+        if inv.get("iron", 0) >= 1 and inv.get("iron_pickaxe", 0) == 0:
+            return _aidx("make_iron_pickaxe")
+        if inv.get("iron", 0) >= 1:
+            return _aidx("make_iron_sword")
 
-    if inv.get("wood", 0) >= 2 and front in _WALKABLE_IDS:
-        if _nearest_target(sem, pos, {_TILE_TABLE}, max_radius=8) is None:
+    # Stage 1: table + wood pickaxe. If a table exists but we lack wood for
+    # the pickaxe, collect wood before returning; otherwise the policy bounces
+    # table<->tree forever.
+    if not has_table:
+        if inv.get("wood", 0) >= 2 and front in _WALKABLE_IDS:
             return _aidx("place_table")
+        if front == _TILE_TREE:
+            return _aidx("do")
+        step = _move_toward_target(rng, sem, pos, {_TILE_TREE})
+        if step is not None:
+            return step
 
-    if at_table and inv.get("stone", 0) >= 4 and front in _WALKABLE_IDS:
-        if _nearest_target(sem, pos, {_TILE_FURNACE}, max_radius=8) is None:
-            return _aidx("place_furnace")
+    if inv.get("wood_pickaxe", 0) == 0 and inv.get("wood", 0) < 1:
+        if front == _TILE_TREE:
+            return _aidx("do")
+        step = _move_toward_target(rng, sem, pos, {_TILE_TREE})
+        if step is not None:
+            return step
+    if inv.get("wood_pickaxe", 0) == 0 and not at_table:
+        step = _move_toward_target(rng, sem, pos, {_TILE_TABLE})
+        if step is not None:
+            return step
+    if at_table and inv.get("wood_pickaxe", 0) == 0 and inv.get("wood", 0) >= 1:
+        return _aidx("make_wood_pickaxe")
 
     # Do on facing tile (collectibles, gated by tool)
     if front == _TILE_TREE:
@@ -208,19 +299,76 @@ def scripted_craft_policy(
     if front == _TILE_WATER and rng.random() < 0.3:
         return _aidx("do")
 
-    # Navigate to nearest interesting tile
-    nav_targets: list[tuple[set[int], str | None]] = [
-        ({_TILE_TREE}, None),
-        ({_TILE_STONE}, "wood_pickaxe"),
-        ({_TILE_COAL}, "wood_pickaxe"),
-        ({_TILE_IRON}, "stone_pickaxe"),
-    ]
-    for target_ids, prereq in nav_targets:
-        if prereq is not None and inv.get(prereq, 0) == 0:
-            continue
-        offset = _nearest_target(sem, pos, target_ids)
-        if offset is not None:
-            return _move_toward(rng, *offset)
+    # Furnace needs 4 stone; stone pickaxe needs one extra stone. Avoid making
+    # stone_sword until the furnace + stone_pickaxe chain is secure.
+    if inv.get("wood_pickaxe", 0) >= 1 and inv.get("stone", 0) < 5:
+        step = _move_toward_target(rng, sem, pos, {_TILE_STONE})
+        if step is not None:
+            return step
+
+    if at_table and not has_furnace and inv.get("stone", 0) >= 4 and front in _WALKABLE_IDS:
+        return _aidx("place_furnace")
+    if not at_furnace and has_furnace:
+        step = _move_toward_target(rng, sem, pos, {_TILE_FURNACE})
+        if step is not None:
+            return step
+
+    if (
+        at_table
+        and inv.get("stone_pickaxe", 0) == 0
+        and inv.get("wood", 0) >= 1
+        and inv.get("stone", 0) >= 1
+    ):
+        return _aidx("make_stone_pickaxe")
+    if at_table and inv.get("stone_pickaxe", 0) == 0 and inv.get("stone", 0) >= 1:
+        if front == _TILE_TREE:
+            return _aidx("do")
+        step = _move_toward_target(rng, sem, pos, {_TILE_TREE})
+        if step is not None:
+            return step
+
+    if inv.get("wood_pickaxe", 0) >= 1 and inv.get("coal", 0) < 2:
+        step = _move_toward_target(rng, sem, pos, {_TILE_COAL})
+        if step is not None:
+            return step
+
+    if inv.get("stone_pickaxe", 0) >= 1 and inv.get("iron", 0) < 2:
+        step = _move_toward_target(rng, sem, pos, {_TILE_IRON})
+        if step is not None:
+            return step
+
+    if (
+        at_table
+        and at_furnace
+        and inv.get("coal", 0) >= 1
+        and inv.get("iron", 0) >= 1
+        and inv.get("wood", 0) < 1
+    ):
+        if front == _TILE_TREE:
+            return _aidx("do")
+        step = _move_toward_target(rng, sem, pos, {_TILE_TREE})
+        if step is not None:
+            return step
+
+    if not at_table and has_table:
+        step = _move_toward_target(rng, sem, pos, {_TILE_TABLE})
+        if step is not None:
+            return step
+    if not at_furnace and has_furnace:
+        step = _move_toward_target(rng, sem, pos, {_TILE_FURNACE})
+        if step is not None:
+            return step
+
+    # Extra positives after the iron-critical chain is no longer blocked.
+    if at_table and inv.get("wood_sword", 0) == 0 and inv.get("wood", 0) >= 1:
+        return _aidx("make_wood_sword")
+    if (
+        at_table
+        and inv.get("stone_sword", 0) == 0
+        and inv.get("wood", 0) >= 1
+        and inv.get("stone", 0) >= 1
+    ):
+        return _aidx("make_stone_sword")
 
     return biased_random_policy(rng, num_actions, info)
 
