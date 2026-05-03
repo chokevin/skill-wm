@@ -59,13 +59,19 @@ PRESET = os.environ.get("RUNE_PRESET") or None
 # Cluster-side pip list. Crafter rollouts only need crafter + numpy + tqdm.
 #
 # TODO(skill-wm-rune-publish): the cluster pod currently has no way to
-# `import skill_wm`. To actually submit this job, publish the skill_wm
-# package to a private index or push the repo and add it here, e.g.:
+# `import skill_wm`. rune-py's --extra-script ships exactly one .py file
+# (this config), so the skill_wm package is not present on the pod.
+#
+# Tracked upstream:
+#   https://github.com/azure-management-and-platforms/aks-ai-runtime/issues/289
+#   ("rune-py: ship caller's local source tree to the cluster")
+#
+# Until that lands, two workarounds: publish the repo and add it here, e.g.:
 #
 #     "skill-wm @ git+https://github.com/<org>/skill-wm.git@<sha>",
 #
-# Until then, --local and --dry-run work; cluster submit will fail at
-# import time on the pod with a clear ImportError.
+# or run a private PyPI. For now --local and --dry-run work; cluster submit
+# will fail at import time on the pod with a clear ImportError.
 RUNTIME_PIP = [
     "crafter==1.8.3",
     "numpy>=2.0,<3",
