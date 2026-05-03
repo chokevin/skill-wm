@@ -1,4 +1,4 @@
-.PHONY: help install sync test lint fix format check smoke collect-small collect-full clean all \
+.PHONY: help install sync test lint fix format check smoke collect-small collect-full eval-local clean all \
         rune-setup rune-collect-local rune-collect rune-collect-dry rune-train-dry rune-eval-dry
 
 help:
@@ -12,6 +12,8 @@ help:
 	@echo "  smoke         5-episode rollout to verify end-to-end"
 	@echo "  collect-small 50-episode rollout (~30s)"
 	@echo "  collect-full  500-episode rollout (~5min)"
+	@echo "  eval-local    run baselines on data/rollouts/smoke (no LLM)"
+	@echo "  eval-llm      run baselines + llm-zero (needs OPENAI_API_KEY)"
 	@echo "  clean         remove caches and rollouts"
 	@echo "  all           install + check + smoke"
 	@echo ""
@@ -42,13 +44,20 @@ format:
 check: lint test
 
 smoke:
-	uv run python -m scripts.collect_rollouts --episodes 5 --max-steps 100 --policy biased_random --out data/rollouts/smoke
+	uv run python -m skill_wm.data.collect --episodes 5 --max-steps 100 --policy biased_random --out data/rollouts/smoke
 
 collect-small:
-	uv run python -m scripts.collect_rollouts --episodes 50 --max-steps 200 --policy biased_random --out data/rollouts/small
+	uv run python -m skill_wm.data.collect --episodes 50 --max-steps 200 --policy biased_random --out data/rollouts/small
 
 collect-full:
-	uv run python -m scripts.collect_rollouts --episodes 500 --max-steps 300 --policy biased_random --out data/rollouts/full
+	uv run python -m skill_wm.data.collect --episodes 500 --max-steps 300 --policy biased_random --out data/rollouts/full
+
+eval-local:
+	uv run python -m skill_wm.eval.run --data data/rollouts/smoke --baselines random marginal precondition --train-frac 0.6 --out eval-local.json
+
+eval-llm:
+	@if [ -z "$$OPENAI_API_KEY" ]; then echo "set OPENAI_API_KEY before eval-llm"; exit 1; fi
+	uv run python -m skill_wm.eval.run --data data/rollouts/smoke --baselines random marginal precondition llm-zero --train-frac 0.6 --out eval-llm.json
 
 clean:
 	rm -rf .pytest_cache .ruff_cache data/rollouts

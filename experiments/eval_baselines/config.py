@@ -77,7 +77,9 @@ def eval_baselines(ctx):
     rollouts_dir = Path(ctx.durable_datasets_dir) / "skill-wm" / "rollouts" / cfg["data_run"]
     out_dir = Path(ctx.durable_checkpoints_dir) / "skill-wm" / ctx.name
     print(f"[eval_baselines STUB] would eval data={rollouts_dir}")
-    print(f"[eval_baselines STUB] would load WM ckpt from ctx.upstream_checkpoint={ctx.upstream_checkpoint}")
+    print(
+        f"[eval_baselines STUB] would load WM ckpt from ctx.upstream_checkpoint={ctx.upstream_checkpoint}"
+    )
     print(f"[eval_baselines STUB] would write to {out_dir}/")
     raise NotImplementedError(
         "eval_baselines body not implemented yet — see skill-wm-eval-metrics + "
@@ -89,9 +91,11 @@ def main():
     parser = argparse.ArgumentParser(description="Skill-WM baseline evaluation")
     parser.add_argument("--local", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--upstream-checkpoint",
-                        help="absolute pod-side path to the trained-WM checkpoint "
-                             "(required for non-dry-run cluster submit; rune.eval has no default)")
+    parser.add_argument(
+        "--upstream-checkpoint",
+        help="absolute pod-side path to the trained-WM checkpoint "
+        "(required for non-dry-run cluster submit; rune.eval has no default)",
+    )
     args = parser.parse_args()
     if args.local:
         eval_baselines()

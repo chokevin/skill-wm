@@ -30,16 +30,24 @@ SEMANTIC_CROP_HALF = 7
 def crop_semantic(
     semantic: np.ndarray, pos: np.ndarray, half: int = SEMANTIC_CROP_HALF
 ) -> np.ndarray:
-    """Return a (2*half+1, 2*half+1) crop around player_pos, padded with 0 at edges."""
+    """Return a (2*half+1, 2*half+1) crop around player_pos, padded with 0 at edges.
+
+    World-aligned: ``crop[half + dx, half + dy] == semantic[px + dx, py + dy]``.
+    Crafter uses ``pos = (x, y)`` and ``sem[x, y]`` (env.py / objects.py).
+    Keeping the crop axes in the same convention means tile lookups by
+    direction (e.g. facing or move offsets) use ``crop[half + fx, half + fy]``
+    with no axis swap. The legacy implementation transposed the axes,
+    which silently broke any consumer that interpreted specific cells.
+    """
     h, w = semantic.shape
     px, py = int(pos[0]), int(pos[1])
     out = np.zeros((2 * half + 1, 2 * half + 1), dtype=semantic.dtype)
-    for dy in range(-half, half + 1):
-        for dx in range(-half, half + 1):
+    for dx in range(-half, half + 1):
+        for dy in range(-half, half + 1):
             sx = px + dx
             sy = py + dy
             if 0 <= sx < h and 0 <= sy < w:
-                out[dy + half, dx + half] = semantic[sx, sy]
+                out[dx + half, dy + half] = semantic[sx, sy]
     return out
 
 

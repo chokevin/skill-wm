@@ -20,7 +20,7 @@ from skill_wm.data.schema import (
     VITAL_KEYS,
     action_success,
 )
-from skill_wm.envs.crafter_env import CrafterWrapper
+from skill_wm.envs.crafter_env import SEMANTIC_CROP_HALF, CrafterWrapper, crop_semantic
 
 
 def test_action_names_are_complete():
@@ -152,3 +152,24 @@ def test_transition_carries_facing_and_sleeping(tmp_path: Path):
     valid = {(-1, 0), (1, 0), (0, -1), (0, 1)}
     for f in loaded["facing_before"]:
         assert tuple(int(x) for x in f) in valid
+
+
+def test_crop_semantic_is_world_aligned():
+    """Lock the world-alignment property: ``crop[half+dx, half+dy] ==
+    sem[px+dx, py+dy]`` for any in-bounds offset. This catches an axis swap
+    (the bug that motivated the rewrite) — and edge clipping.
+    """
+    h = SEMANTIC_CROP_HALF
+    sem = np.arange(64 * 64, dtype=np.int32).reshape(64, 64)
+    pos = np.array([20, 30])
+    crop = crop_semantic(sem, pos, half=h)
+    for dx in (-h, -1, 0, 1, h):
+        for dy in (-h, -1, 0, 1, h):
+            assert crop[h + dx, h + dy] == sem[pos[0] + dx, pos[1] + dy], (
+                f"axis mismatch at offset ({dx},{dy}): "
+                f"crop={crop[h + dx, h + dy]} sem={sem[pos[0] + dx, pos[1] + dy]}"
+            )
+    # Out-of-bounds should be 0-padded, not crash.
+    edge_pos = np.array([0, 0])
+    edge_crop = crop_semantic(sem, edge_pos, half=h)
+    assert edge_crop[h - 1, h - 1] == 0  # off the top-left corner

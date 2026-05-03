@@ -165,15 +165,19 @@ def collect_rollouts(ctx):
     # Path under rune's durable datasets dir (persistent across runs).
     # Locally: `cwd/datasets/...`. On the cluster: `/data/datasets/...` on
     # the PVC mount, readable by downstream training/eval jobs.
-    out_dir = Path(ctx.durable_datasets_dir) / "skill-wm" / "rollouts" / ctx.name / f"rank-{rank:03d}"
+    out_dir = (
+        Path(ctx.durable_datasets_dir) / "skill-wm" / "rollouts" / ctx.name / f"rank-{rank:03d}"
+    )
 
     if n_episodes == 0:
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "summary.json").write_text(
             f'{{"rank": {rank}, "world_size": {world_size}, "episodes": 0}}\n'
         )
-        print(f"[rank {rank}] no episodes assigned (world_size={world_size} > "
-              f"total_episodes={total_episodes})")
+        print(
+            f"[rank {rank}] no episodes assigned (world_size={world_size} > "
+            f"total_episodes={total_episodes})"
+        )
         return
 
     stats = collect(
@@ -191,10 +195,16 @@ def collect_rollouts(ctx):
 
 def main():
     parser = argparse.ArgumentParser(description="Skill-WM rollout collection")
-    parser.add_argument("--local", action="store_true",
-                        help="run inside this process (no submit, writes to cwd/skill-wm/rollouts/<name>/)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="render manifest via rune CLI client-side, do not apply")
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="run inside this process (no submit, writes to cwd/skill-wm/rollouts/<name>/)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="render manifest via rune CLI client-side, do not apply",
+    )
     args = parser.parse_args()
 
     if args.local:

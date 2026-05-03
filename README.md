@@ -32,12 +32,18 @@ skill_wm/
   envs/crafter_env.py     # CrafterWrapper that emits clean Transition records
   data/schema.py          # Transition dataclass, action_success, deltas
   data/collect.py         # Random / biased-random rollout collection
-  models/                 # (T1) trained WM, LLM-as-WM baseline
-  eval/                   # (T1) Brier, ECE, per-skill accuracy
-scripts/
-  collect_rollouts.py     # entry point: dump npz transitions to disk
+  models/
+    baselines.py          # Random / Marginal / Precondition predictors
+    state_text.py         # Crafter state -> ASCII prompt for the LLM
+    llm_wm.py             # OpenAI client + logprob-based p(success)
+  eval/
+    dataset.py            # ScoringRow loader, seed-disjoint split, manifest
+    metrics.py            # Brier (headline), ECE (adaptive bins, gated by support)
+    run.py                # CLI: load -> split -> fit -> predict -> table
 tests/
-  test_smoke.py           # end-to-end smoke test
+  test_smoke.py           # env + schema + crop alignment
+  test_eval_dataset_metrics.py
+  test_models.py          # baselines + state_text + llm_wm (with FakeLLMClient)
 experiments/              # rune-py jobs for the voice-agent-flex AKS cluster
   collect_rollouts/config.py   # parallel rollout collection across N pods
   train_wm/config.py           # (stub) train the trained-WM checkpoint
@@ -54,6 +60,8 @@ data/rollouts/            # gitignored: collected transitions
 make install              # uv sync
 make check                # lint + tests
 make smoke                # 5-episode rollout end-to-end
+make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
+make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
 ```
 
@@ -61,9 +69,11 @@ Or call uv directly:
 
 ```bash
 uv sync
-uv run pytest -q                    # run smoke tests
-uv run ruff check .                 # lint
-uv run python -m scripts.collect_rollouts --episodes 50 --max-steps 200
+uv run pytest -q                                               # all tests
+uv run ruff check .                                            # lint
+uv run python -m skill_wm.data.collect --episodes 50           # collect rollouts
+uv run python -m skill_wm.eval.run --data data/rollouts/smoke \
+    --baselines random marginal precondition                   # score
 ```
 
 Optional, for the LLM-as-WM baseline (later):
@@ -131,6 +141,16 @@ RUNE_NAME=skill-wm-eval-001 SKILL_WM_DATA_RUN=skill-wm-collect-001 \
 All experiments default to `team="experimental"` (the only safe Kueue queue for research on voice-agent-flex). Outputs land under `<ctx.data_dir>/skill-wm/{rollouts,checkpoints,eval}/<run-name>/` — locally that's cwd, on the cluster it's the PVC mount.
 
 **Cluster status (verified 2026-05-02)**: `collect_rollouts` runs end-to-end on voice-agent-flex. `skill-wm-collect-smoke-004` (5 episodes, biased random) wrote 5 npz to `/data/datasets/skill-wm/rollouts/skill-wm-collect-smoke-004/rank-000/` with the expected schema (192 transitions in ep 0, 36% per-action success rate, 3 achievements unlocked).
+
+**T1 baseline harness status (verified locally on a 5-episode smoke set, ~500 transitions, 60/40 seed-disjoint split)**:
+
+| baseline | overall Brier | overall ECE |
+|---|---|---|
+| random (always 0.5) | 0.250 | n/a |
+| marginal (per-action prior) | ~0.10 | ~0.05 |
+| precondition (hand-coded rules) | ~0.07 | ~0.04 |
+
+These are the harness floor/ceiling references. The trained WM and LLM-as-WM baselines are next; see `skill-wm-trained-wm` and the LLM-as-WM toggle in `make eval-llm`. 5 episodes is far too sparse for honest per-action ECE — that requires the next big collect submit (~50+ episodes), but the headline Brier ordering is already meaningful.
 
 **Known gaps before T1 can actually run on the cluster:**
 - `train_wm` and `eval_baselines` are stubs (raise `NotImplementedError`). Real bodies depend on the `skill-wm-trained-wm` / `skill-wm-llm-baseline` / `skill-wm-eval-metrics` todos.

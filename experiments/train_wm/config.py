@@ -72,10 +72,10 @@ def train_wm(ctx):
     ckpt_dir = Path(ctx.durable_checkpoints_dir) / "skill-wm" / ctx.name
     print(f"[train_wm STUB] would train on {rollouts_dir}")
     print(f"[train_wm STUB] would write to {ckpt_dir}/wm.pt")
-    print(f"[train_wm STUB] hyperparams: epochs={cfg['epochs']} batch={cfg['batch_size']} lr={cfg['lr']}")
-    raise NotImplementedError(
-        "train_wm body not implemented yet — see skill-wm-trained-wm todo"
+    print(
+        f"[train_wm STUB] hyperparams: epochs={cfg['epochs']} batch={cfg['batch_size']} lr={cfg['lr']}"
     )
+    raise NotImplementedError("train_wm body not implemented yet — see skill-wm-trained-wm todo")
 
 
 def main():
