@@ -1,0 +1,1029 @@
+{
+  "data_dir": "data/rollouts/collect-002-combined",
+  "eval_data_dir": "data/rollouts/collect-001",
+  "n_rows": 17347,
+  "n_eval_source_rows": 8451,
+  "n_train": 17347,
+  "n_eval": 8451,
+  "train_frac": 0.6,
+  "split_seed": 1337,
+  "obs_radius": null,
+  "baselines": [
+    "random",
+    "marginal",
+    "precondition",
+    "precondition+backoff",
+    "inv-mlp",
+    "trained"
+  ],
+  "results": {
+    "random": {
+      "aggregate": {
+        "n": 8451,
+        "base_rate": 0.39947935155602887,
+        "mean_pred": 0.5,
+        "brier": 0.25,
+        "ece": NaN
+      },
+      "per_action": {
+        "noop": {
+          "count": 148,
+          "positives": 0,
+          "mean_pred": 0.5,
+          "mean_label": 0.0,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "move_left": {
+          "count": 975,
+          "positives": 770,
+          "mean_pred": 0.5,
+          "mean_label": 0.7897435897435897,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "move_right": {
+          "count": 939,
+          "positives": 735,
+          "mean_pred": 0.5,
+          "mean_label": 0.7827476038338658,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "move_up": {
+          "count": 914,
+          "positives": 726,
+          "mean_pred": 0.5,
+          "mean_label": 0.7943107221006565,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "move_down": {
+          "count": 976,
+          "positives": 789,
+          "mean_pred": 0.5,
+          "mean_label": 0.8084016393442623,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "do": {
+          "count": 1226,
+          "positives": 187,
+          "mean_pred": 0.5,
+          "mean_label": 0.15252854812398042,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "sleep": {
+          "count": 137,
+          "positives": 89,
+          "mean_pred": 0.5,
+          "mean_label": 0.6496350364963503,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "place_stone": {
+          "count": 313,
+          "positives": 0,
+          "mean_pred": 0.5,
+          "mean_label": 0.0,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "place_table": {
+          "count": 316,
+          "positives": 10,
+          "mean_pred": 0.5,
+          "mean_label": 0.03164556962025317,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "place_furnace": {
+          "count": 323,
+          "positives": 1,
+          "mean_pred": 0.5,
+          "mean_label": 0.0030959752321981426,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "place_plant": {
+          "count": 298,
+          "positives": 69,
+          "mean_pred": 0.5,
+          "mean_label": 0.23154362416107382,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "make_wood_pickaxe": {
+          "count": 314,
+          "positives": 0,
+          "mean_pred": 0.5,
+          "mean_label": 0.0,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "make_stone_pickaxe": {
+          "count": 341,
+          "positives": 0,
+          "mean_pred": 0.5,
+          "mean_label": 0.0,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "make_iron_pickaxe": {
+          "count": 312,
+          "positives": 0,
+          "mean_pred": 0.5,
+          "mean_label": 0.0,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "make_wood_sword": {
+          "count": 308,
+          "positives": 0,
+          "mean_pred": 0.5,
+          "mean_label": 0.0,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "make_stone_sword": {
+          "count": 285,
+          "positives": 0,
+          "mean_pred": 0.5,
+          "mean_label": 0.0,
+          "brier": 0.25,
+          "ece": NaN
+        },
+        "make_iron_sword": {
+          "count": 326,
+          "positives": 0,
+          "mean_pred": 0.5,
+          "mean_label": 0.0,
+          "brier": 0.25,
+          "ece": NaN
+        }
+      }
+    },
+    "marginal": {
+      "aggregate": {
+        "n": 8451,
+        "base_rate": 0.39947935155602887,
+        "mean_pred": 0.46611650403957083,
+        "brier": 0.23489210137647698,
+        "ece": 0.2426240215830564
+      },
+      "per_action": {
+        "noop": {
+          "count": 148,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "move_left": {
+          "count": 975,
+          "positives": 770,
+          "mean_pred": 0.5407874015748033,
+          "mean_label": 0.7897435897435897,
+          "brier": 0.22802783583003067,
+          "ece": NaN
+        },
+        "move_right": {
+          "count": 939,
+          "positives": 735,
+          "mean_pred": 0.5614671503426037,
+          "mean_label": 0.7827476038338658,
+          "brier": 0.21901883162350583,
+          "ece": NaN
+        },
+        "move_up": {
+          "count": 914,
+          "positives": 726,
+          "mean_pred": 0.5849612974566901,
+          "mean_label": 0.7943107221006565,
+          "brier": 0.20720838045534995,
+          "ece": NaN
+        },
+        "move_down": {
+          "count": 976,
+          "positives": 789,
+          "mean_pred": 0.5362629510539476,
+          "mean_label": 0.8084016393442623,
+          "brier": 0.22894789451414455,
+          "ece": NaN
+        },
+        "do": {
+          "count": 1226,
+          "positives": 187,
+          "mean_pred": 0.7630508474576273,
+          "mean_label": 0.15252854812398042,
+          "brier": 0.5020010681148138,
+          "ece": NaN
+        },
+        "sleep": {
+          "count": 137,
+          "positives": 89,
+          "mean_pred": 0.7848101265822783,
+          "mean_label": 0.6496350364963503,
+          "brier": 0.24588166083247465,
+          "ece": NaN
+        },
+        "place_stone": {
+          "count": 313,
+          "positives": 0,
+          "mean_pred": 0.09782608695652174,
+          "mean_label": 0.0,
+          "brier": 0.009569943289224952,
+          "ece": NaN
+        },
+        "place_table": {
+          "count": 316,
+          "positives": 10,
+          "mean_pred": 0.6679104477611941,
+          "mean_label": 0.03164556962025317,
+          "brier": 0.4354771226993693,
+          "ece": NaN
+        },
+        "place_furnace": {
+          "count": 323,
+          "positives": 1,
+          "mean_pred": 0.06842105263157895,
+          "mean_label": 0.0030959752321981426,
+          "brier": 0.007353755906794851,
+          "ece": NaN
+        },
+        "place_plant": {
+          "count": 298,
+          "positives": 69,
+          "mean_pred": 0.06842105263157895,
+          "mean_label": 0.23154362416107382,
+          "brier": 0.20454014761382439,
+          "ece": NaN
+        },
+        "make_wood_pickaxe": {
+          "count": 314,
+          "positives": 0,
+          "mean_pred": 0.6617100371747213,
+          "mean_label": 0.0,
+          "brier": 0.437860173297771,
+          "ece": NaN
+        },
+        "make_stone_pickaxe": {
+          "count": 341,
+          "positives": 0,
+          "mean_pred": 0.12396694214876035,
+          "mean_label": 0.0,
+          "brier": 0.01536780274571409,
+          "ece": NaN
+        },
+        "make_iron_pickaxe": {
+          "count": 312,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "make_wood_sword": {
+          "count": 308,
+          "positives": 0,
+          "mean_pred": 0.6812816188870151,
+          "mean_label": 0.0,
+          "brier": 0.4641446442333122,
+          "ece": NaN
+        },
+        "make_stone_sword": {
+          "count": 285,
+          "positives": 0,
+          "mean_pred": 0.138755980861244,
+          "mean_label": 0.0,
+          "brier": 0.019253222224765918,
+          "ece": NaN
+        },
+        "make_iron_sword": {
+          "count": 326,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        }
+      }
+    },
+    "precondition": {
+      "aggregate": {
+        "n": 8451,
+        "base_rate": 0.39947935155602887,
+        "mean_pred": 0.44976925807596735,
+        "brier": 0.07726896225298781,
+        "ece": 0.050289906519938476
+      },
+      "per_action": {
+        "noop": {
+          "count": 148,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "move_left": {
+          "count": 975,
+          "positives": 770,
+          "mean_pred": 0.8892307692307693,
+          "mean_label": 0.7897435897435897,
+          "brier": 0.09948717948717949,
+          "ece": 0.09948717948717956
+        },
+        "move_right": {
+          "count": 939,
+          "positives": 735,
+          "mean_pred": 0.8977635782747604,
+          "mean_label": 0.7827476038338658,
+          "brier": 0.11501597444089456,
+          "ece": 0.11501597444089462
+        },
+        "move_up": {
+          "count": 914,
+          "positives": 726,
+          "mean_pred": 0.887308533916849,
+          "mean_label": 0.7943107221006565,
+          "brier": 0.09299781181619256,
+          "ece": 0.0929978118161926
+        },
+        "move_down": {
+          "count": 976,
+          "positives": 789,
+          "mean_pred": 0.9036885245901639,
+          "mean_label": 0.8084016393442623,
+          "brier": 0.09528688524590163,
+          "ece": 0.09528688524590156
+        },
+        "do": {
+          "count": 1226,
+          "positives": 187,
+          "mean_pred": 0.12153344208809136,
+          "mean_label": 0.15252854812398042,
+          "brier": 0.13866231647634583,
+          "ece": 0.030995106035889064
+        },
+        "sleep": {
+          "count": 137,
+          "positives": 89,
+          "mean_pred": 0.9343065693430657,
+          "mean_label": 0.6496350364963503,
+          "brier": 0.3722627737226277,
+          "ece": 0.2846715328467153
+        },
+        "place_stone": {
+          "count": 313,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "place_table": {
+          "count": 316,
+          "positives": 10,
+          "mean_pred": 0.1518987341772152,
+          "mean_label": 0.03164556962025317,
+          "brier": 0.13291139240506328,
+          "ece": 0.12025316455696203
+        },
+        "place_furnace": {
+          "count": 323,
+          "positives": 1,
+          "mean_pred": 0.0,
+          "mean_label": 0.0030959752321981426,
+          "brier": 0.0030959752321981426,
+          "ece": NaN
+        },
+        "place_plant": {
+          "count": 298,
+          "positives": 69,
+          "mean_pred": 0.24496644295302014,
+          "mean_label": 0.23154362416107382,
+          "brier": 0.020134228187919462,
+          "ece": 0.013422818791946317
+        },
+        "make_wood_pickaxe": {
+          "count": 314,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "make_stone_pickaxe": {
+          "count": 341,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "make_iron_pickaxe": {
+          "count": 312,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "make_wood_sword": {
+          "count": 308,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "make_stone_sword": {
+          "count": 285,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "make_iron_sword": {
+          "count": 326,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        }
+      }
+    },
+    "precondition+backoff": {
+      "aggregate": {
+        "n": 8451,
+        "base_rate": 0.39947935155602887,
+        "mean_pred": 0.44976925807596735,
+        "brier": 0.07726896225298781,
+        "ece": 0.050289906519938476
+      },
+      "per_action": {
+        "noop": {
+          "count": 148,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "move_left": {
+          "count": 975,
+          "positives": 770,
+          "mean_pred": 0.8892307692307693,
+          "mean_label": 0.7897435897435897,
+          "brier": 0.09948717948717949,
+          "ece": 0.09948717948717956
+        },
+        "move_right": {
+          "count": 939,
+          "positives": 735,
+          "mean_pred": 0.8977635782747604,
+          "mean_label": 0.7827476038338658,
+          "brier": 0.11501597444089456,
+          "ece": 0.11501597444089462
+        },
+        "move_up": {
+          "count": 914,
+          "positives": 726,
+          "mean_pred": 0.887308533916849,
+          "mean_label": 0.7943107221006565,
+          "brier": 0.09299781181619256,
+          "ece": 0.0929978118161926
+        },
+        "move_down": {
+          "count": 976,
+          "positives": 789,
+          "mean_pred": 0.9036885245901639,
+          "mean_label": 0.8084016393442623,
+          "brier": 0.09528688524590163,
+          "ece": 0.09528688524590156
+        },
+        "do": {
+          "count": 1226,
+          "positives": 187,
+          "mean_pred": 0.12153344208809136,
+          "mean_label": 0.15252854812398042,
+          "brier": 0.13866231647634583,
+          "ece": 0.030995106035889064
+        },
+        "sleep": {
+          "count": 137,
+          "positives": 89,
+          "mean_pred": 0.9343065693430657,
+          "mean_label": 0.6496350364963503,
+          "brier": 0.3722627737226277,
+          "ece": 0.2846715328467153
+        },
+        "place_stone": {
+          "count": 313,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "place_table": {
+          "count": 316,
+          "positives": 10,
+          "mean_pred": 0.1518987341772152,
+          "mean_label": 0.03164556962025317,
+          "brier": 0.13291139240506328,
+          "ece": 0.12025316455696203
+        },
+        "place_furnace": {
+          "count": 323,
+          "positives": 1,
+          "mean_pred": 0.0,
+          "mean_label": 0.0030959752321981426,
+          "brier": 0.0030959752321981426,
+          "ece": NaN
+        },
+        "place_plant": {
+          "count": 298,
+          "positives": 69,
+          "mean_pred": 0.24496644295302014,
+          "mean_label": 0.23154362416107382,
+          "brier": 0.020134228187919462,
+          "ece": 0.013422818791946317
+        },
+        "make_wood_pickaxe": {
+          "count": 314,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "make_stone_pickaxe": {
+          "count": 341,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "make_iron_pickaxe": {
+          "count": 312,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "make_wood_sword": {
+          "count": 308,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "make_stone_sword": {
+          "count": 285,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "make_iron_sword": {
+          "count": 326,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        }
+      }
+    },
+    "inv-mlp": {
+      "aggregate": {
+        "n": 8451,
+        "base_rate": 0.39947935155602887,
+        "mean_pred": 0.3629377888680289,
+        "brier": 0.23067665484900343,
+        "ece": 0.188027404528831
+      },
+      "per_action": {
+        "noop": {
+          "count": 148,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "move_left": {
+          "count": 975,
+          "positives": 770,
+          "mean_pred": 0.39667501781856596,
+          "mean_label": 0.7897435897435897,
+          "brier": 0.31530434566246274,
+          "ece": 0.3930685719250238
+        },
+        "move_right": {
+          "count": 939,
+          "positives": 735,
+          "mean_pred": 0.4867406832750141,
+          "mean_label": 0.7827476038338658,
+          "brier": 0.2542390458925327,
+          "ece": 0.2960069205588518
+        },
+        "move_up": {
+          "count": 914,
+          "positives": 726,
+          "mean_pred": 0.44145150109179,
+          "mean_label": 0.7943107221006565,
+          "brier": 0.2946836259308423,
+          "ece": 0.35285922100886646
+        },
+        "move_down": {
+          "count": 976,
+          "positives": 789,
+          "mean_pred": 0.4056824151010577,
+          "mean_label": 0.8084016393442623,
+          "brier": 0.317290874826749,
+          "ece": 0.4027192242432046
+        },
+        "do": {
+          "count": 1226,
+          "positives": 187,
+          "mean_pred": 0.7087271993351749,
+          "mean_label": 0.15252854812398042,
+          "brier": 0.4413328946046385,
+          "ece": 0.5561986512111945
+        },
+        "sleep": {
+          "count": 137,
+          "positives": 89,
+          "mean_pred": 0.616095840708077,
+          "mean_label": 0.6496350364963503,
+          "brier": 0.06456927739467574,
+          "ece": 0.18164756119217884
+        },
+        "place_stone": {
+          "count": 313,
+          "positives": 0,
+          "mean_pred": 0.020085488357664914,
+          "mean_label": 0.0,
+          "brier": 0.0005972345728797869,
+          "ece": 0.020085488357664917
+        },
+        "place_table": {
+          "count": 316,
+          "positives": 10,
+          "mean_pred": 0.2043752392514061,
+          "mean_label": 0.03164556962025317,
+          "brier": 0.06042978853081625,
+          "ece": 0.1727296696311529
+        },
+        "place_furnace": {
+          "count": 323,
+          "positives": 1,
+          "mean_pred": 0.011087907621874993,
+          "mean_label": 0.0030959752321981426,
+          "brier": 0.003198421785178021,
+          "ece": 0.01261611807916233
+        },
+        "place_plant": {
+          "count": 298,
+          "positives": 69,
+          "mean_pred": 0.07710763599358875,
+          "mean_label": 0.23154362416107382,
+          "brier": 0.16186890128008707,
+          "ece": 0.15825631303550167
+        },
+        "make_wood_pickaxe": {
+          "count": 314,
+          "positives": 0,
+          "mean_pred": 0.5993334711386895,
+          "mean_label": 0.0,
+          "brier": 0.36884208310668815,
+          "ece": 0.5993334711386896
+        },
+        "make_stone_pickaxe": {
+          "count": 341,
+          "positives": 0,
+          "mean_pred": 0.02597228087520343,
+          "mean_label": 0.0,
+          "brier": 0.0007965581018279098,
+          "ece": 0.025972280875203427
+        },
+        "make_iron_pickaxe": {
+          "count": 312,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        },
+        "make_wood_sword": {
+          "count": 308,
+          "positives": 0,
+          "mean_pred": 0.5321077218857705,
+          "mean_label": 0.0,
+          "brier": 0.28625262525537404,
+          "ece": 0.5321077218857705
+        },
+        "make_stone_sword": {
+          "count": 285,
+          "positives": 0,
+          "mean_pred": 0.04307713983422459,
+          "mean_label": 0.0,
+          "brier": 0.005448217167993819,
+          "ece": 0.04307713983422458
+        },
+        "make_iron_sword": {
+          "count": 326,
+          "positives": 0,
+          "mean_pred": 0.0,
+          "mean_label": 0.0,
+          "brier": 0.0,
+          "ece": NaN
+        }
+      }
+    },
+    "trained": {
+      "aggregate": {
+        "n": 8451,
+        "base_rate": 0.39947935155602887,
+        "mean_pred": 0.45907624121667234,
+        "brier": 0.09769246261976292,
+        "ece": 0.0960902780330782
+      },
+      "per_action": {
+        "noop": {
+          "count": 148,
+          "positives": 0,
+          "mean_pred": 0.003295729378948715,
+          "mean_label": 0.0,
+          "brier": 0.0010751410767408636,
+          "ece": 0.003295729378948715
+        },
+        "move_left": {
+          "count": 975,
+          "positives": 770,
+          "mean_pred": 0.8911008504332315,
+          "mean_label": 0.7897435897435897,
+          "brier": 0.1018209160120507,
+          "ece": 0.10135726068964176
+        },
+        "move_right": {
+          "count": 939,
+          "positives": 735,
+          "mean_pred": 0.8908862141145683,
+          "mean_label": 0.7827476038338658,
+          "brier": 0.12052015065924017,
+          "ece": 0.11447001063313383
+        },
+        "move_up": {
+          "count": 914,
+          "positives": 726,
+          "mean_pred": 0.8908277648893909,
+          "mean_label": 0.7943107221006565,
+          "brier": 0.09681341518412073,
+          "ece": 0.09651704278873438
+        },
+        "move_down": {
+          "count": 976,
+          "positives": 789,
+          "mean_pred": 0.903967438831885,
+          "mean_label": 0.8084016393442623,
+          "brier": 0.09713095964104954,
+          "ece": 0.09556579948762287
+        },
+        "do": {
+          "count": 1226,
+          "positives": 187,
+          "mean_pred": 0.21523234195752872,
+          "mean_label": 0.15252854812398042,
+          "brier": 0.20544973993917903,
+          "ece": 0.20828630854968844
+        },
+        "sleep": {
+          "count": 137,
+          "positives": 89,
+          "mean_pred": 0.9292740103156463,
+          "mean_label": 0.6496350364963503,
+          "brier": 0.32957767447155367,
+          "ece": 0.32472968414208314
+        },
+        "place_stone": {
+          "count": 313,
+          "positives": 0,
+          "mean_pred": 0.010559717151517344,
+          "mean_label": 0.0,
+          "brier": 0.0074402585662797305,
+          "ece": 0.010559717151517342
+        },
+        "place_table": {
+          "count": 316,
+          "positives": 10,
+          "mean_pred": 0.17112274044162368,
+          "mean_label": 0.03164556962025317,
+          "brier": 0.13175666246882017,
+          "ece": 0.1521287559578276
+        },
+        "place_furnace": {
+          "count": 323,
+          "positives": 1,
+          "mean_pred": 0.0001610763484357302,
+          "mean_label": 0.0030959752321981426,
+          "brier": 0.003102195550533946,
+          "ece": 0.0032570515633797933
+        },
+        "place_plant": {
+          "count": 298,
+          "positives": 69,
+          "mean_pred": 0.005284713025173334,
+          "mean_label": 0.23154362416107382,
+          "brier": 0.2327287944747481,
+          "ece": 0.22625891113590046
+        },
+        "make_wood_pickaxe": {
+          "count": 314,
+          "positives": 0,
+          "mean_pred": 0.037812099378507893,
+          "mean_label": 0.0,
+          "brier": 0.026782261741080633,
+          "ece": 0.037812099378507893
+        },
+        "make_stone_pickaxe": {
+          "count": 341,
+          "positives": 0,
+          "mean_pred": 0.000719000294129039,
+          "mean_label": 0.0,
+          "brier": 6.67711120864592e-05,
+          "ece": 0.000719000294129039
+        },
+        "make_iron_pickaxe": {
+          "count": 312,
+          "positives": 0,
+          "mean_pred": 9.788212945966562e-08,
+          "mean_label": 0.0,
+          "brier": 3.2133301566765037e-13,
+          "ece": 9.788212945966562e-08
+        },
+        "make_wood_sword": {
+          "count": 308,
+          "positives": 0,
+          "mean_pred": 0.04533499649713585,
+          "mean_label": 0.0,
+          "brier": 0.029740972049156652,
+          "ece": 0.04533499649713585
+        },
+        "make_stone_sword": {
+          "count": 285,
+          "positives": 0,
+          "mean_pred": 0.003631268017374132,
+          "mean_label": 0.0,
+          "brier": 0.0026791066145549223,
+          "ece": 0.0036312680173741325
+        },
+        "make_iron_sword": {
+          "count": 326,
+          "positives": 0,
+          "mean_pred": 8.3605692280805e-06,
+          "mean_label": 0.0,
+          "brier": 1.6513791776658347e-08,
+          "ece": 8.360569228080498e-06
+        }
+      }
+    }
+  },
+  "manifest": {
+    "rows": 8451,
+    "seeds": 50,
+    "seed_list": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49
+    ],
+    "per_action": {
+      "noop": {
+        "count": 148,
+        "successes": 0
+      },
+      "move_left": {
+        "count": 975,
+        "successes": 770
+      },
+      "move_right": {
+        "count": 939,
+        "successes": 735
+      },
+      "move_up": {
+        "count": 914,
+        "successes": 726
+      },
+      "move_down": {
+        "count": 976,
+        "successes": 789
+      },
+      "do": {
+        "count": 1226,
+        "successes": 187
+      },
+      "sleep": {
+        "count": 137,
+        "successes": 89
+      },
+      "place_stone": {
+        "count": 313,
+        "successes": 0
+      },
+      "place_table": {
+        "count": 316,
+        "successes": 10
+      },
+      "place_furnace": {
+        "count": 323,
+        "successes": 1
+      },
+      "place_plant": {
+        "count": 298,
+        "successes": 69
+      },
+      "make_wood_pickaxe": {
+        "count": 314,
+        "successes": 0
+      },
+      "make_stone_pickaxe": {
+        "count": 341,
+        "successes": 0
+      },
+      "make_iron_pickaxe": {
+        "count": 312,
+        "successes": 0
+      },
+      "make_wood_sword": {
+        "count": 308,
+        "successes": 0
+      },
+      "make_stone_sword": {
+        "count": 285,
+        "successes": 0
+      },
+      "make_iron_sword": {
+        "count": 326,
+        "successes": 0
+      }
+    }
+  }
+}

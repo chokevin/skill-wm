@@ -11,6 +11,10 @@ Usage::
 Add ``llm-zero`` to ``--baselines`` to also run the LLM-as-WM zero-shot
 baseline (requires ``OPENAI_API_KEY``). LLM responses are cached on disk
 under ``--llm-cache`` so reruns are free.
+
+For distribution-shift checks, pass ``--eval-data``. In that mode ``--data``
+is used entirely for training, and ``--eval-data`` is used entirely for
+evaluation; no seed split is performed.
 """
 
 from __future__ import annotations
@@ -69,8 +73,20 @@ def build_baseline(name: str, llm_cache: Path | None) -> Predictor:
 def run(args: argparse.Namespace) -> dict:
     rows = load_dir(args.data)
     log.info("loaded %d rows from %s", len(rows), args.data)
-    train, evalu = split_by_seed(rows, train_frac=args.train_frac, rng_seed=args.split_seed)
-    log.info("split: train=%d eval=%d", len(train), len(evalu))
+    eval_source_rows: list | None = None
+    if args.eval_data is not None:
+        eval_source_rows = load_dir(args.eval_data)
+        train, evalu = rows, eval_source_rows
+        log.info(
+            "cross-data eval: train=%d rows from %s; eval=%d rows from %s",
+            len(train),
+            args.data,
+            len(evalu),
+            args.eval_data,
+        )
+    else:
+        train, evalu = split_by_seed(rows, train_frac=args.train_frac, rng_seed=args.split_seed)
+        log.info("split: train=%d eval=%d", len(train), len(evalu))
 
     if args.eval_limit is not None and args.eval_limit < len(evalu):
         # Subsample the eval split deterministically. This is for cheap
@@ -93,9 +109,9 @@ def run(args: argparse.Namespace) -> dict:
 
     overall_manifest = manifest(rows)
     eval_manifest = manifest(evalu)
-    print("\n=== full dataset manifest ===")
+    print("\n=== train source manifest ===")
     print(format_manifest(overall_manifest))
-    print("\n=== eval split manifest ===")
+    print("\n=== eval manifest ===")
     print(format_manifest(eval_manifest))
 
     results: dict[str, dict] = {}
@@ -114,7 +130,9 @@ def run(args: argparse.Namespace) -> dict:
 
     out = {
         "data_dir": str(args.data),
+        "eval_data_dir": str(args.eval_data) if args.eval_data is not None else None,
         "n_rows": len(rows),
+        "n_eval_source_rows": len(eval_source_rows) if eval_source_rows is not None else len(rows),
         "n_train": len(train),
         "n_eval": len(evalu),
         "train_frac": args.train_frac,
@@ -151,6 +169,14 @@ def _json_default(o):
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Evaluate skill-WM baselines on a rollout dir.")
     p.add_argument("--data", type=Path, required=True, help="dir of .npz rollouts (recursive)")
+    p.add_argument(
+        "--eval-data",
+        type=Path,
+        default=None,
+        help="optional held-out rollout dir for cross-distribution eval. If set, "
+        "--data is used entirely for training and --eval-data entirely for scoring; "
+        "--train-frac/--split-seed are ignored for the split.",
+    )
     p.add_argument(
         "--baselines",
         nargs="+",
