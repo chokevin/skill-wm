@@ -76,7 +76,25 @@ class _RowDataset(Dataset):
 
 
 class TrainedWMNet(nn.Module):
-    """The actual nn.Module. Returns success logits (raw, pre-sigmoid)."""
+    """The actual nn.Module. Returns success logits (raw, pre-sigmoid).
+
+    Key design point: we preserve spatial features in a small region around
+    the player. The original version global-average-pooled the CNN output,
+    which made it impossible to learn precondition rules like "is there a
+    table in an adjacent cell?" — the kind of rule that the precondition
+    baseline gets right by hand.
+
+    Now we use:
+      - Conv stack at full spatial resolution (15x15) -> per-cell features.
+      - **Local crop**: extract a 5x5 region centered on the player, flatten.
+        This carries "what is at each of the 4 adjacent cells + center +
+        a 1-step ring" -- exactly the info the rules need.
+      - **Global pool**: a global average over the full crop, for
+        long-range context (e.g. "is there a table anywhere in view?").
+      - Inventory MLP and action embedding as before.
+    """
+
+    LOCAL_RADIUS = 2  # 5x5 region around the player at (7, 7)
 
     def __init__(
         self,
@@ -84,55 +102,67 @@ class TrainedWMNet(nn.Module):
         conv_dim: int = 32,
         inv_dim: int = 32,
         action_dim: int = 32,
-        hidden_dim: int = 64,
+        hidden_dim: int = 128,
     ):
         super().__init__()
         self.tile_emb = nn.Embedding(NUM_TILES, tile_dim)
         self.action_emb = nn.Embedding(NUM_ACTIONS, action_dim)
 
-        # 2-layer CNN. Input is (B, tile_dim, 15, 15) after the embedding
-        # is permuted into channel-first form.
+        # Spatial CNN that preserves resolution.
         self.conv = nn.Sequential(
             nn.Conv2d(tile_dim, conv_dim, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.Conv2d(conv_dim, conv_dim, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d(1),  # global pool -> (B, conv_dim, 1, 1)
-            nn.Flatten(),
         )
+        self.global_pool = nn.AdaptiveAvgPool2d(1)
+
+        local_size = (2 * self.LOCAL_RADIUS + 1) ** 2  # 25 cells
+        local_feat_dim = conv_dim * local_size
 
         self.inv_mlp = nn.Sequential(
             nn.Linear(INV_SIZE, inv_dim),
             nn.ReLU(),
         )
 
-        feat_dim = conv_dim + inv_dim + action_dim
+        feat_dim = local_feat_dim + conv_dim + inv_dim + action_dim
         self.head = nn.Sequential(
             nn.Linear(feat_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
         )
 
     def forward(self, crop: torch.Tensor, inv: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
-        # crop: (B, 15, 15) int64 -> (B, 15, 15, tile_dim) -> (B, tile_dim, 15, 15)
+        # crop: (B, 15, 15) int64 -> (B, tile_dim, 15, 15)
         embedded = self.tile_emb(crop).permute(0, 3, 1, 2)
-        spatial = self.conv(embedded)  # (B, conv_dim)
-        inv_feat = self.inv_mlp(inv)  # (B, inv_dim)
-        act_feat = self.action_emb(action)  # (B, action_dim)
-        feat = torch.cat([spatial, inv_feat, act_feat], dim=1)
-        return self.head(feat).squeeze(-1)  # (B,)
+        spatial = self.conv(embedded)  # (B, conv_dim, 15, 15)
+
+        # Local crop around the player at (CROP_SIZE//2, CROP_SIZE//2).
+        center = CROP_SIZE // 2  # 7
+        r = self.LOCAL_RADIUS
+        local = spatial[:, :, center - r : center + r + 1, center - r : center + r + 1]
+        local_flat = local.reshape(local.size(0), -1)  # (B, conv_dim * 25)
+
+        global_feat = self.global_pool(spatial).flatten(1)  # (B, conv_dim)
+        inv_feat = self.inv_mlp(inv)
+        act_feat = self.action_emb(action)
+
+        feat = torch.cat([local_flat, global_feat, inv_feat, act_feat], dim=1)
+        return self.head(feat).squeeze(-1)
 
 
 @dataclass
 class TrainConfig:
-    epochs: int = 20
+    epochs: int = 60
     batch_size: int = 128
     lr: float = 1e-3
     weight_decay: float = 1e-4
     val_frac: float = 0.1
     device: str = "cpu"  # MPS is slower than CPU for this size on a laptop
     seed: int = 0
-    early_stop_patience: int = 5  # epochs with no val Brier improvement
+    early_stop_patience: int = 10  # epochs with no val Brier improvement
 
 
 class TrainedWM:
