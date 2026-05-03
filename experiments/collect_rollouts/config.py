@@ -95,11 +95,9 @@ SKILL_WM_REF = os.environ.get("SKILL_WM_REPO_REF", "main")
 # for chokevin/skill-wm. When aks-ai-runtime#289 lands and we can ship the
 # source tree directly via runtime.working_dir, this can flip back to private.
 RUNTIME_PIP = [
-    "crafter==1.8.3",
-    "numpy==2.1.3",
-    "tqdm==4.67.1",
-    "imageio==2.37.0",
-    "pyyaml==6.0.2",
+    # Just install skill-wm. Its pyproject.toml pulls in crafter, numpy,
+    # tqdm, imageio, pyyaml at compatible versions transitively. Listing
+    # them here separately invites version conflicts.
     f"{SKILL_WM_REPO}@{SKILL_WM_REF}",
 ]
 
