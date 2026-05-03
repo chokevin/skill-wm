@@ -24,6 +24,7 @@ from skill_wm.models.trained_wm import (
     TrainConfig,
     TrainedWM,
     TrainedWMNet,
+    _target_label,
 )
 
 
@@ -43,6 +44,30 @@ def _row(action: int, success: bool, *, seed: int = 0, step: int = 0) -> Scoring
         sleeping_before=False,
         semantic_crop_before=crop,
         success=success,
+    )
+
+
+def _row_with_outcome(
+    *,
+    success: bool = False,
+    reward: float = 0.0,
+    achievements_unlocked: tuple[str, ...] = (),
+) -> ScoringRow:
+    row = _row(0, success)
+    return ScoringRow(
+        seed=row.seed,
+        episode=row.episode,
+        step=row.step,
+        action=row.action,
+        action_name=row.action_name,
+        inventory_before=row.inventory_before,
+        player_pos_before=row.player_pos_before,
+        facing_before=row.facing_before,
+        sleeping_before=row.sleeping_before,
+        semantic_crop_before=row.semantic_crop_before,
+        success=row.success,
+        reward=reward,
+        achievements_unlocked=achievements_unlocked,
     )
 
 
@@ -68,6 +93,18 @@ def test_predict_before_fit_raises() -> None:
     wm = TrainedWM()
     with pytest.raises(RuntimeError, match="fit"):
         wm.predict([_row(0, False)])
+
+
+def test_target_label_modes() -> None:
+    row = _row_with_outcome(success=False, reward=1.0, achievements_unlocked=("collect_wood",))
+    assert _target_label(row, "success") == 0.0
+    assert _target_label(row, "reward_positive") == 1.0
+    assert _target_label(row, "achievement_positive") == 1.0
+    assert _target_label(row, "progress") == 1.0
+
+    no_progress = _row_with_outcome(success=True, reward=0.0, achievements_unlocked=())
+    assert _target_label(no_progress, "success") == 1.0
+    assert _target_label(no_progress, "progress") == 0.0
 
 
 def test_fit_predict_returns_probs_in_unit_interval() -> None:

@@ -81,6 +81,8 @@ uv run python -m skill_wm.agent.run --train-data data/rollouts/collect-002-combi
     --policies biased_random scripted_craft precondition-greedy trained-greedy
 uv run python -m skill_wm.agent.run --train-data data/rollouts/collect-002-combined \
     --policies mixed precondition-rerank-mixed trained-rerank-mixed
+uv run python -m skill_wm.agent.run --train-data data/rollouts/collect-002-combined \
+    --policies mixed precondition-rerank-mixed trained-achievement-rerank-mixed
 ```
 
 Optional, for the LLM-as-WM baseline (later):

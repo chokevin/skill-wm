@@ -36,6 +36,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import torch
@@ -53,6 +54,9 @@ INV_SIZE = len(INVENTORY_KEYS)
 CROP_SIZE = 15
 
 
+TargetName = Literal["success", "reward_positive", "achievement_positive", "progress"]
+
+
 def _row_to_tensors(row: ScoringRow) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Pack a ScoringRow's features into model-ready tensors (no batch dim)."""
     crop = torch.from_numpy(row.semantic_crop_before.astype(np.int64))
@@ -61,9 +65,22 @@ def _row_to_tensors(row: ScoringRow) -> tuple[torch.Tensor, torch.Tensor, torch.
     return crop, inv, action
 
 
+def _target_label(row: ScoringRow, target: TargetName) -> float:
+    if target == "success":
+        return float(row.success)
+    if target == "reward_positive":
+        return float(row.reward > 0.0)
+    if target == "achievement_positive":
+        return float(len(row.achievements_unlocked) > 0)
+    if target == "progress":
+        return float(row.reward > 0.0 or len(row.achievements_unlocked) > 0)
+    raise ValueError(f"unknown trained-WM target: {target}")
+
+
 class _RowDataset(Dataset):
-    def __init__(self, rows: list[ScoringRow]):
+    def __init__(self, rows: list[ScoringRow], target: TargetName = "success"):
         self.rows = rows
+        self.target = target
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -71,7 +88,7 @@ class _RowDataset(Dataset):
     def __getitem__(self, i: int):
         r = self.rows[i]
         crop, inv, action = _row_to_tensors(r)
-        label = torch.tensor(float(r.success), dtype=torch.float32)
+        label = torch.tensor(_target_label(r, self.target), dtype=torch.float32)
         return crop, inv, action, label
 
 
@@ -163,6 +180,7 @@ class TrainConfig:
     device: str = "cpu"  # MPS is slower than CPU for this size on a laptop
     seed: int = 0
     early_stop_patience: int = 10  # epochs with no val Brier improvement
+    target: TargetName = "success"
 
 
 class TrainedWM:
@@ -207,7 +225,7 @@ class TrainedWM:
         loss_fn = nn.BCEWithLogitsLoss()
 
         train_loader = DataLoader(
-            _RowDataset(tr_rows),
+            _RowDataset(tr_rows, target=self.config.target),
             batch_size=self.config.batch_size,
             shuffle=True,
             drop_last=False,
@@ -235,8 +253,21 @@ class TrainedWM:
                 seen += label.size(0)
             train_loss = running / max(seen, 1)
             val_brier = self._brier_on(va_rows)
-            self.history.append({"epoch": epoch, "train_loss": train_loss, "val_brier": val_brier})
-            log.info("epoch %d  train_loss=%.4f  val_brier=%.4f", epoch, train_loss, val_brier)
+            self.history.append(
+                {
+                    "epoch": epoch,
+                    "train_loss": train_loss,
+                    "val_brier": val_brier,
+                    "target": self.config.target,
+                }
+            )
+            log.info(
+                "epoch %d  target=%s  train_loss=%.4f  val_brier=%.4f",
+                epoch,
+                self.config.target,
+                train_loss,
+                val_brier,
+            )
             if val_brier + 1e-6 < best_val_brier:
                 best_val_brier = val_brier
                 best_state = {k: v.detach().clone() for k, v in self.net.state_dict().items()}
@@ -255,7 +286,7 @@ class TrainedWM:
         if not rows:
             return float("nan")
         probs = self.predict(rows)
-        labels = np.array([r.success for r in rows], dtype=np.float64)
+        labels = np.array([_target_label(r, self.config.target) for r in rows], dtype=np.float64)
         return float(np.mean((probs - labels) ** 2))
 
     @torch.no_grad()
@@ -265,7 +296,7 @@ class TrainedWM:
         device = next(self.net.parameters()).device
         self.net.eval()
         loader = DataLoader(
-            _RowDataset(eval_rows),
+            _RowDataset(eval_rows, target=self.config.target),
             batch_size=max(self.config.batch_size, 256),
             shuffle=False,
             drop_last=False,
@@ -288,6 +319,7 @@ class TrainedWM:
             {
                 "state_dict": self.net.state_dict(),
                 "history": self.history,
+                "target": self.config.target,
             },
             path,
         )

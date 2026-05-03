@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from skill_wm.agent.run import PredictorPolicy, _state_action_rows
+from skill_wm.agent.run import PredictorPolicy, _build_predictor, _state_action_rows
 from skill_wm.data.schema import ACTION_NAMES
 
 
@@ -66,3 +66,8 @@ def test_predictor_policy_rerank_uses_candidate_subset() -> None:
     )
     action = policy.act(np.random.default_rng(0), env, _info(), episode=0, step=0)
     assert 0 <= action < len(ACTION_NAMES)
+
+
+def test_build_predictor_supports_progress_target() -> None:
+    predictor = _build_predictor("trained-progress")
+    assert predictor.config.target == "progress"

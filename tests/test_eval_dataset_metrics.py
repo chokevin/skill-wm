@@ -66,6 +66,21 @@ def test_load_dir_flat(tmp_path: Path) -> None:
     assert len(rows) == 10
 
 
+def test_load_dir_preserves_reward_and_achievements(tmp_path: Path) -> None:
+    path = tmp_path / "ep.npz"
+    _make_npz(path, n_rows=2, seed=0)
+    data = dict(np.load(path))
+    data["reward"] = np.array([1.0, 0.0], dtype=np.float32)
+    data["achievements_unlocked"] = np.array(["collect_wood|place_table", ""])
+    np.savez_compressed(path, **data)
+
+    rows = load_dir(tmp_path)
+    assert rows[0].reward == pytest.approx(1.0)
+    assert rows[0].achievements_unlocked == ("collect_wood", "place_table")
+    assert rows[1].reward == pytest.approx(0.0)
+    assert rows[1].achievements_unlocked == ()
+
+
 def test_load_dir_missing(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         load_dir(tmp_path / "nope")

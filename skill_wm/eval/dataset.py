@@ -63,6 +63,8 @@ class ScoringRow:
 
     # Ground truth label
     success: bool
+    reward: float = 0.0
+    achievements_unlocked: tuple[str, ...] = ()
 
     @property
     def row_id(self) -> str:
@@ -82,6 +84,8 @@ def load_shard(npz_path: Path) -> list[ScoringRow]:
     rows: list[ScoringRow] = []
     for i in range(n):
         action = int(f["action"][i])
+        raw_ach = str(f["achievements_unlocked"][i]) if "achievements_unlocked" in f else ""
+        achievements = tuple(x for x in raw_ach.split("|") if x)
         rows.append(
             ScoringRow(
                 seed=int(f["seed"][i]),
@@ -95,6 +99,8 @@ def load_shard(npz_path: Path) -> list[ScoringRow]:
                 sleeping_before=bool(f["sleeping_before"][i]),
                 semantic_crop_before=np.asarray(f["semantic_crop_before"][i]),
                 success=bool(f["success"][i]),
+                reward=float(f["reward"][i]) if "reward" in f else 0.0,
+                achievements_unlocked=achievements,
             )
         )
     return rows

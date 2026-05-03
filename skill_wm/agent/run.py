@@ -279,6 +279,22 @@ def _build_predictor(kind: str) -> Predictor:
         from skill_wm.models.trained_wm import TrainedWM
 
         return TrainedWM()
+    if kind.startswith("trained-"):
+        from skill_wm.models.trained_wm import TrainConfig, TrainedWM
+
+        target_aliases = {
+            "reward": "reward_positive",
+            "achievement": "achievement_positive",
+            "progress": "progress",
+        }
+        suffix = kind[len("trained-") :]
+        target = target_aliases.get(suffix)
+        if target is None:
+            raise ValueError(
+                f"unknown trained target {suffix!r}; use trained, trained-reward, "
+                "trained-achievement, or trained-progress"
+            )
+        return TrainedWM(config=TrainConfig(target=target))
     raise ValueError(f"unknown predictor kind {kind!r}")
 
 
@@ -386,7 +402,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "agent policies: rollout policies {random,biased_random,scripted_craft,mixed}; "
             "or predictor policies like trained-greedy, precondition-greedy, "
-            "trained-rerank-biased, trained-rerank-mixed, precondition-rerank-scripted"
+            "trained-rerank-biased, trained-progress-rerank-mixed, "
+            "precondition-rerank-scripted"
         ),
     )
     p.add_argument("--episodes", type=int, default=20)
