@@ -30,8 +30,10 @@ T1 is complete; the active work is T2.
 ```
 skill_wm/
   envs/crafter_env.py     # CrafterWrapper that emits clean Transition records
+  envs/minihack_env.py    # optional MiniHack/NLE adapter for second-env experiments
   data/schema.py          # Transition dataclass, action_success, deltas
   data/collect.py         # Random / biased-random rollout collection
+  data/collect_minihack.py # MiniHack random rollout collector
   models/
     baselines.py          # Random / Marginal / Precondition predictors
     state_text.py         # Crafter state -> ASCII prompt for the LLM
@@ -63,6 +65,7 @@ data/rollouts/            # gitignored: collected transitions
 make install              # uv sync
 make check                # lint + tests
 make smoke                # 5-episode rollout end-to-end
+make minihack-smoke       # optional MiniHack rollout (installs --extra minihack)
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -83,6 +86,28 @@ uv run python -m skill_wm.agent.run --train-data data/rollouts/collect-002-combi
     --policies mixed precondition-rerank-mixed trained-rerank-mixed
 uv run python -m skill_wm.agent.run --train-data data/rollouts/collect-002-combined \
     --policies mixed precondition-rerank-mixed trained-achievement-rerank-mixed
+uv run --extra minihack python -m skill_wm.data.collect_minihack \
+    --env-id MiniHack-Room-5x5-v0 --episodes 2 --max-steps 50
+```
+
+## Second environment: MiniHack/NLE
+
+Crafter now looks exhausted for the "learned WM beats rules" contribution:
+rules + backoff dominate trained WMs as predictors and as live-agent filters.
+The next environment is **MiniHack/NLE**, but only as an adapted custom-task
+suite rather than full NetHackScore.
+
+The MiniHack adapter is optional and logs the raw state primitives we need before
+committing to a shared predictor schema: glyph crop, BLStats, message text,
+inventory strings, action, reward, terminal, and a generic success label
+(`success`/`task_success` from `info`, falling back to `reward > 0`).
+
+MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
+CMake first if your platform has to build NLE from source:
+
+```bash
+brew install cmake        # macOS, if no wheel is available
+make minihack-smoke
 ```
 
 Optional, for the LLM-as-WM baseline (later):
