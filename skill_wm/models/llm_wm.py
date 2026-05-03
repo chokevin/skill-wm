@@ -88,24 +88,43 @@ class FakeLLMClient:
 
 
 class OpenAIClient:
-    """Real OpenAI Chat Completions client.
+    """Real Chat Completions client.
 
-    Lazily imports the SDK so the rest of the codebase doesn't pull
-    `openai` into import paths. Reads the API key from `OPENAI_API_KEY`.
-    Retries on transient errors with exponential backoff.
+    Lazily imports the OpenAI SDK so the rest of the codebase doesn't
+    pull `openai` into import paths. Configurable to point at any
+    OpenAI-compatible endpoint (e.g. GitHub Models at
+    ``https://models.github.ai/inference``, which accepts a GitHub PAT
+    with the ``copilot`` scope as the bearer token and supports
+    ``logprobs`` + ``top_logprobs`` exactly like the real OpenAI API).
+
+    Defaults read from env vars:
+      ``LLM_BASE_URL``  - override the SDK's default base URL
+      ``LLM_API_KEY``   - override the API key (else falls back to
+                          ``OPENAI_API_KEY``)
+      ``LLM_MODEL``     - override the default model name
     """
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
-        max_retries: int = 4,
+        model: str | None = None,
+        max_retries: int = 8,
         backoff_base: float = 2.0,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        timeout: float = 30.0,
     ):
         from openai import OpenAI  # type: ignore[import-not-found]
 
         self._OpenAI = OpenAI
-        self._client = OpenAI()
-        self.model = model
+        kwargs: dict[str, Any] = {"timeout": timeout, "max_retries": 0}
+        base_url = base_url or os.environ.get("LLM_BASE_URL")
+        api_key = api_key or os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        if base_url:
+            kwargs["base_url"] = base_url
+        if api_key:
+            kwargs["api_key"] = api_key
+        self._client = OpenAI(**kwargs)
+        self.model = model or os.environ.get("LLM_MODEL") or "gpt-4o-mini"
         self.max_retries = max_retries
         self.backoff_base = backoff_base
 
@@ -134,10 +153,17 @@ class OpenAIClient:
                 # list omitted it (unusual but possible).
                 tops.append((token_lp.token, float(token_lp.logprob)))
                 return LLMResponse(p_yes=_renormalize(tops), raw_top=tops)
-            except Exception as e:  # broad: includes RateLimit, APIConnection, etc.
+            except Exception as e:  # broad: includes RateLimit, APIConnection, Timeout, etc.
                 last_exc = e
+                # Honor Retry-After when the server provides it (rate-limit case).
                 wait = self.backoff_base**attempt
-                log.warning("openai retry %d after %.1fs: %s", attempt + 1, wait, e)
+                ra = getattr(getattr(e, "response", None), "headers", {})
+                if ra:
+                    try:
+                        wait = max(wait, float(ra.get("retry-after", 0)) + 1)
+                    except (TypeError, ValueError):
+                        pass
+                log.warning("openai retry %d/%d after %.1fs: %s", attempt + 1, self.max_retries, wait, e)
                 time.sleep(wait)
         raise RuntimeError(f"openai client failed after {self.max_retries} retries: {last_exc}")
 
@@ -196,8 +222,15 @@ class LLMWorldModel:
         return None
 
     def predict(self, eval_rows: list[ScoringRow]) -> np.ndarray:
+        try:
+            from tqdm import tqdm
+
+            iterator = tqdm(eval_rows, desc=f"llm({getattr(self.client, 'model', 'fake')})")
+        except ImportError:
+            iterator = eval_rows
         out = np.empty(len(eval_rows), dtype=np.float64)
-        for i, row in enumerate(eval_rows):
+        cache_dirty = False
+        for i, row in enumerate(iterator):
             user = render_user_prompt(row)
             key = f"{row.row_id}:{self._prompt_key(user)}"
             if key in self._cache:
@@ -206,7 +239,12 @@ class LLMWorldModel:
             resp = self.client.complete(SYSTEM_PROMPT, user)
             self._cache[key] = resp.p_yes
             out[i] = resp.p_yes
-        self._save_cache()
+            cache_dirty = True
+            # Save cache every 50 calls so we don't lose work on Ctrl-C.
+            if cache_dirty and (i + 1) % 50 == 0:
+                self._save_cache()
+        if cache_dirty:
+            self._save_cache()
         return out
 
 
@@ -215,10 +253,27 @@ def make_default_client_or_skip() -> Any:
 
     Importing `openai` is deferred until this is called so dry-runs and
     pure-baseline runs don't require the package.
+
+    Two configurations supported:
+
+    1. Direct OpenAI (``OPENAI_API_KEY`` set, no other env). Uses the SDK
+       defaults; model defaults to ``gpt-4o-mini``.
+
+    2. GitHub Models proxy (``LLM_BASE_URL`` and ``LLM_API_KEY`` set). Use
+       ``https://models.github.ai/inference`` as the base URL, a GitHub
+       PAT with ``copilot`` scope as the API key, and a model like
+       ``openai/gpt-4o-mini`` (note the ``openai/`` prefix). The Helper
+       `make eval-llm-gh` (Makefile target) exports those automatically
+       from `gh auth token`.
     """
-    if not os.environ.get("OPENAI_API_KEY"):
+    have_key = bool(
+        os.environ.get("OPENAI_API_KEY") or os.environ.get("LLM_API_KEY")
+    )
+    if not have_key:
         raise RuntimeError(
-            "OPENAI_API_KEY is not set. Either export it, or run the eval "
-            "without `llm-zero` in --baselines to skip the LLM call."
+            "No LLM credentials. Set OPENAI_API_KEY for direct OpenAI, OR set "
+            "LLM_BASE_URL=https://models.github.ai/inference plus "
+            "LLM_API_KEY=$(gh auth token) plus LLM_MODEL=openai/gpt-4o-mini "
+            "to use the GitHub Models proxy. Otherwise drop `llm-zero` from --baselines."
         )
     return OpenAIClient()

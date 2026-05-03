@@ -1,0 +1,266 @@
+{
+  "data_dir": "data/rollouts/collect-002-combined",
+  "n_rows": 17347,
+  "n_train": 11792,
+  "n_eval": 200,
+  "train_frac": 0.7,
+  "split_seed": 42,
+  "baselines": [
+    "llm-zero"
+  ],
+  "results": {
+    "llm-zero": {
+      "aggregate": {
+        "n": 200,
+        "base_rate": 0.63,
+        "mean_pred": 0.36024082263459184,
+        "brier": 0.4873143631328209,
+        "ece": 0.4625277382896603
+      },
+      "per_action": {
+        "noop": {
+          "count": 1,
+          "positives": 0,
+          "mean_pred": 0.9999382988793727,
+          "mean_label": 0.0,
+          "brier": 0.9998766015657736,
+          "ece": NaN
+        },
+        "move_left": {
+          "count": 33,
+          "positives": 22,
+          "mean_pred": 0.3698657382133831,
+          "mean_label": 0.6666666666666666,
+          "brier": 0.4722087384835204,
+          "ece": 0.4538406646838614
+        },
+        "move_right": {
+          "count": 24,
+          "positives": 16,
+          "mean_pred": 0.6327416418399625,
+          "mean_label": 0.6666666666666666,
+          "brier": 0.192526518090361,
+          "ece": NaN
+        },
+        "move_up": {
+          "count": 38,
+          "positives": 24,
+          "mean_pred": 0.40803936112202044,
+          "mean_label": 0.631578947368421,
+          "brier": 0.5356929416615962,
+          "ece": 0.47895304812852324
+        },
+        "move_down": {
+          "count": 31,
+          "positives": 14,
+          "mean_pred": 0.7218294581044332,
+          "mean_label": 0.45161290322580644,
+          "brier": 0.41523702546920666,
+          "ece": 0.3412559281417751
+        },
+        "do": {
+          "count": 41,
+          "positives": 35,
+          "mean_pred": 0.07084300463645846,
+          "mean_label": 0.8536585365853658,
+          "brier": 0.7570526067338215,
+          "ece": 0.7828155319489074
+        },
+        "sleep": {
+          "count": 0,
+          "positives": 0,
+          "mean_pred": NaN,
+          "mean_label": NaN,
+          "brier": NaN,
+          "ece": NaN
+        },
+        "place_stone": {
+          "count": 0,
+          "positives": 0,
+          "mean_pred": NaN,
+          "mean_label": NaN,
+          "brier": NaN,
+          "ece": NaN
+        },
+        "place_table": {
+          "count": 2,
+          "positives": 1,
+          "mean_pred": 0.0004700292230685401,
+          "mean_label": 0.5,
+          "brier": 0.4996452730423052,
+          "ece": NaN
+        },
+        "place_furnace": {
+          "count": 4,
+          "positives": 2,
+          "mean_pred": 1.2198711839897057e-10,
+          "mean_label": 0.5,
+          "brier": 0.49999999975612497,
+          "ece": NaN
+        },
+        "place_plant": {
+          "count": 1,
+          "positives": 1,
+          "mean_pred": 0.01901839086193458,
+          "mean_label": 1.0,
+          "brier": 0.9623249174671081,
+          "ece": NaN
+        },
+        "make_wood_pickaxe": {
+          "count": 8,
+          "positives": 6,
+          "mean_pred": 0.11448779547469949,
+          "mean_label": 0.75,
+          "brier": 0.6223333978353334,
+          "ece": NaN
+        },
+        "make_stone_pickaxe": {
+          "count": 3,
+          "positives": 1,
+          "mean_pred": 0.37274030788231954,
+          "mean_label": 0.3333333333333333,
+          "brier": 0.0052502913964945636,
+          "ece": NaN
+        },
+        "make_iron_pickaxe": {
+          "count": 2,
+          "positives": 0,
+          "mean_pred": 1.4500455549530186e-13,
+          "mean_label": 0.0,
+          "brier": 3.6462508835708015e-26,
+          "ece": NaN
+        },
+        "make_wood_sword": {
+          "count": 6,
+          "positives": 4,
+          "mean_pred": 0.1349188857008136,
+          "mean_label": 0.6666666666666666,
+          "brier": 0.505928354915422,
+          "ece": NaN
+        },
+        "make_stone_sword": {
+          "count": 3,
+          "positives": 0,
+          "mean_pred": 0.0021634324744723606,
+          "mean_label": 0.0,
+          "brier": 1.037438664129196e-05,
+          "ece": NaN
+        },
+        "make_iron_sword": {
+          "count": 3,
+          "positives": 0,
+          "mean_pred": 2.9852939365761406e-14,
+          "mean_label": 0.0,
+          "brier": 1.1856653417701696e-27,
+          "ece": NaN
+        }
+      }
+    }
+  },
+  "manifest": {
+    "rows": 200,
+    "seeds": 30,
+    "seed_list": [
+      6,
+      8,
+      11,
+      12,
+      13,
+      14,
+      19,
+      22,
+      30,
+      34,
+      35,
+      36,
+      41,
+      44,
+      47,
+      49,
+      2003,
+      2004,
+      2008,
+      2014,
+      2015,
+      2016,
+      2017,
+      2024,
+      2027,
+      2032,
+      2035,
+      2038,
+      2040,
+      2048
+    ],
+    "per_action": {
+      "noop": {
+        "count": 1,
+        "successes": 0
+      },
+      "move_left": {
+        "count": 33,
+        "successes": 22
+      },
+      "move_right": {
+        "count": 24,
+        "successes": 16
+      },
+      "move_up": {
+        "count": 38,
+        "successes": 24
+      },
+      "move_down": {
+        "count": 31,
+        "successes": 14
+      },
+      "do": {
+        "count": 41,
+        "successes": 35
+      },
+      "sleep": {
+        "count": 0,
+        "successes": 0
+      },
+      "place_stone": {
+        "count": 0,
+        "successes": 0
+      },
+      "place_table": {
+        "count": 2,
+        "successes": 1
+      },
+      "place_furnace": {
+        "count": 4,
+        "successes": 2
+      },
+      "place_plant": {
+        "count": 1,
+        "successes": 1
+      },
+      "make_wood_pickaxe": {
+        "count": 8,
+        "successes": 6
+      },
+      "make_stone_pickaxe": {
+        "count": 3,
+        "successes": 1
+      },
+      "make_iron_pickaxe": {
+        "count": 2,
+        "successes": 0
+      },
+      "make_wood_sword": {
+        "count": 6,
+        "successes": 4
+      },
+      "make_stone_sword": {
+        "count": 3,
+        "successes": 0
+      },
+      "make_iron_sword": {
+        "count": 3,
+        "successes": 0
+      }
+    }
+  }
+}

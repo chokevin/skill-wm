@@ -66,6 +66,15 @@ def run(args: argparse.Namespace) -> dict:
     train, evalu = split_by_seed(rows, train_frac=args.train_frac, rng_seed=args.split_seed)
     log.info("split: train=%d eval=%d", len(train), len(evalu))
 
+    if args.eval_limit is not None and args.eval_limit < len(evalu):
+        # Subsample the eval split deterministically. This is for cheap
+        # spot-checks against expensive baselines (LLM); the train slice
+        # is unchanged so trained models still see the full training set.
+        rng = np.random.default_rng(args.split_seed)
+        idx = rng.permutation(len(evalu))[: args.eval_limit]
+        evalu = [evalu[i] for i in sorted(idx.tolist())]
+        log.info("eval-limit: subsampled to %d rows", len(evalu))
+
     overall_manifest = manifest(rows)
     eval_manifest = manifest(evalu)
     print("\n=== full dataset manifest ===")
@@ -141,6 +150,13 @@ def parse_args() -> argparse.Namespace:
         help="suppress per-action ECE below this row count (per-action Brier still reported)",
     )
     p.add_argument("--out", type=Path, default=None, help="write JSON results here")
+    p.add_argument(
+        "--eval-limit",
+        type=int,
+        default=None,
+        help="cap eval-split row count (deterministic subsample). Useful for "
+        "expensive baselines like llm-zero where 5K calls is overkill for a smoke test.",
+    )
     p.add_argument(
         "--llm-cache",
         type=Path,
