@@ -81,8 +81,8 @@ SKILL_WM_REF = os.environ.get("SKILL_WM_REPO_REF", "main")
 # Use ONLY exact `==` pins and bare `git+https://...@<ref>` (no `pkg @`).
 # Tracked separately from #289 — different bug, same general theme.
 #
-# TODO(skill-wm-rune-publish): rune-py's --extra-script ships exactly one .py
-# file (this config), so the skill_wm package is not on the pod by default.
+# rune-py's --extra-script ships exactly one .py file (this config), so the
+# skill_wm package is not on the pod by default.
 # Tracked upstream:
 #   https://github.com/azure-management-and-platforms/aks-ai-runtime/issues/289
 #   ("rune-py: ship caller's local source tree to the cluster")

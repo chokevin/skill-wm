@@ -31,12 +31,17 @@ WORKERS = int(os.environ.get("SKILL_WM_EVAL_WORKERS", "4"))
 TEAM = os.environ.get("RUNE_TEAM", "experimental")
 PRESET = os.environ.get("RUNE_PRESET") or None
 
+SKILL_WM_REPO = os.environ.get(
+    "SKILL_WM_REPO_URL",
+    "git+https://github.com/chokevin/skill-wm.git",
+)
+SKILL_WM_REF = os.environ.get("SKILL_WM_REPO_REF", "main")
+
 RUNTIME_PIP = [
-    "torch>=2.4,<3",
-    "numpy>=2.0,<3",
-    "openai>=2.0",
-    "tqdm>=4.66",
-    "pyyaml>=6",
+    f"{SKILL_WM_REPO}@{SKILL_WM_REF}",
+    "torch==2.4.1",
+    "openai==2.33.0",
+    "pyyaml==6.0.3",
 ]
 
 
@@ -101,7 +106,14 @@ def main():
         eval_baselines()
         return
     if args.dry_run:
-        eval_baselines.submit(dry_run="client")
+        # rune.eval requires an upstream checkpoint even for client-side
+        # dry-run manifest rendering. Use a harmless pod-side placeholder when
+        # the caller only wants to validate the manifest shape.
+        eval_baselines.submit(
+            dry_run="client",
+            upstream_checkpoint=args.upstream_checkpoint
+            or "/data/checkpoints/skill-wm-train-smoke/wm.pt",
+        )
         return
     if not args.upstream_checkpoint:
         raise SystemExit(

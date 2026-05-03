@@ -32,11 +32,16 @@ LR = float(os.environ.get("SKILL_WM_LR", "3e-4"))
 TEAM = os.environ.get("RUNE_TEAM", "experimental")
 PRESET = os.environ.get("RUNE_PRESET") or None
 
+SKILL_WM_REPO = os.environ.get(
+    "SKILL_WM_REPO_URL",
+    "git+https://github.com/chokevin/skill-wm.git",
+)
+SKILL_WM_REF = os.environ.get("SKILL_WM_REPO_REF", "main")
+
 RUNTIME_PIP = [
-    "torch>=2.4,<3",
-    "numpy>=2.0,<3",
-    "tqdm>=4.66",
-    "pyyaml>=6",
+    f"{SKILL_WM_REPO}@{SKILL_WM_REF}",
+    "torch==2.4.1",
+    "pyyaml==6.0.3",
 ]
 
 

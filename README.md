@@ -130,10 +130,10 @@ make rune-eval-dry
 You must set `RUNE_NAME` per submit so each run is uniquely named in Kueue:
 
 ```bash
-# Collect: rune envelope is correct, but submit will fail until skill_wm is
-# published — see TODO(skill-wm-rune-publish) in collect_rollouts/config.py.
+# Collect: installs skill-wm from the public GitHub repo by default.
+# Pin the exact commit for reproducible cluster runs:
 RUNE_NAME=skill-wm-collect-001 SKILL_WM_TOTAL_EPISODES=500 SKILL_WM_WORKERS=10 \
-    make rune-collect
+    SKILL_WM_REPO_REF=$(git rev-parse HEAD) make rune-collect
 
 # Train: stub — not runnable yet (skill-wm-trained-wm todo).
 RUNE_NAME=skill-wm-train-001 SKILL_WM_DATA_RUN=skill-wm-collect-001 \
