@@ -70,6 +70,8 @@ make minihack-smoke       # optional MiniHack rollout (installs --extra minihack
 make skill-jepa-smoke     # collect MiniHack smoke + train tiny Skill-JEPA gate
 make skill-jepa-eval      # held-out-seed MiniHack Skill-JEPA eval JSON
 make skill-jepa-task-eval # held-out-task MiniHack Skill-JEPA eval JSONs
+make skill-jepa-coverage-eval # noisy-room to lava coverage diagnostic
+make skill-jepa-hazard-eval # noisy-room to deliberate lava-probe diagnostic
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -126,7 +128,14 @@ tasks with matched seeds, trains on a seed-disjoint split, and writes
 `data/eval/minihack-skill-jepa-controlled.json`. Use
 `make skill-jepa-task-eval` for the distribution-shift gate: it trains on one
 controlled task and evaluates on the other, writing room-to-lava and
-lava-to-room JSON summaries under `data/eval/`.
+lava-to-room JSON summaries under `data/eval/`. The JSON summaries include
+coverage diagnostics (`action_oov_rate`, glyph OOV rates, and OOV-conditioned
+surprise) so the task-shift gap can be separated into unseen-action versus
+unseen-object/hazard effects. Use `make skill-jepa-coverage-eval` to collect a
+noisy room-goal training set with broader action coverage before evaluating on
+lava-detour. Use `make skill-jepa-hazard-eval` for the sharper probe: the model
+trains on noisy room-goal transitions, then evaluates on lava-detour episodes
+that deliberately attempt one unsafe lava step before recovering.
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
 CMake first if your platform has to build NLE from source:
