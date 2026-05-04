@@ -56,6 +56,19 @@ def test_live_candidate_rows_do_not_need_future_state() -> None:
     assert object_signature(candidates[1]) == "east|.->L->."
 
 
+def test_live_candidate_rows_mark_door_target() -> None:
+    candidates = live_candidate_rows(
+        _obs_for_logical_pos((2, 1)),
+        env_id="skillwm-door-hall",
+        action_names=MINIHACK_CARDINAL_ACTION_NAMES,
+        coord_offset=(34, 9),
+        seed=1,
+        step=2,
+    )
+
+    assert object_signature(candidates[1]) == "east|.->+->."
+
+
 def test_oracle_object_shield_blocks_lava_target() -> None:
     selected = oracle_object_shield_action(
         "skillwm-lava-detour",
@@ -148,6 +161,27 @@ def test_live_probe_policy_supports_west_side_probe() -> None:
     assert MINIHACK_CARDINAL_ACTION_NAMES[first] == "west"
     assert memory["west_lava_probe_done"] is True
     assert MINIHACK_CARDINAL_ACTION_NAMES[second] != "west"
+
+
+def test_live_probe_policy_supports_required_door_probe() -> None:
+    memory: dict[str, bool] = {}
+    info = {
+        "env_id": "skillwm-door-hall",
+        "action_names": MINIHACK_CARDINAL_ACTION_NAMES,
+        "coord_offset": (34, 9),
+        "policy_memory": memory,
+        "obs": {"blstats": np.array([36, 10, 0], dtype=np.int32)},
+    }
+
+    first = live_probe_policy(
+        np.random.default_rng(0),
+        len(MINIHACK_CARDINAL_ACTION_NAMES),
+        info,
+        LIVE_PROBES["door"],
+    )
+
+    assert MINIHACK_CARDINAL_ACTION_NAMES[first] == "east"
+    assert memory["door_lava_probe_done"] is True
 
 
 def test_proposed_object_signature_known_uses_training_signatures() -> None:

@@ -19,6 +19,12 @@ _WALKABLE_MAP_TILES = {".", "#", "+", ">"}
 
 
 @dataclass(frozen=True)
+class MiniHackDoorSpec:
+    pos: tuple[int, int]
+    state: str = "closed"
+
+
+@dataclass(frozen=True)
 class MiniHackTaskSpec:
     """Small custom task definition we can make into a MiniHack env."""
 
@@ -30,10 +36,11 @@ class MiniHackTaskSpec:
     max_episode_steps: int = 80
     action_names: tuple[str, ...] = MINIHACK_CARDINAL_ACTION_NAMES
     hazard_tiles: tuple[str, ...] = ()
+    doors: tuple[MiniHackDoorSpec, ...] = ()
 
     @property
     def des_file(self) -> str:
-        return _des_for_map(self.map_lines, self.start_pos, self.goal_pos)
+        return _des_for_map(self.map_lines, self.start_pos, self.goal_pos, self.doors)
 
     @property
     def walkable(self) -> frozenset[tuple[int, int]]:
@@ -89,6 +96,7 @@ def _des_for_map(
     map_lines: tuple[str, ...],
     start_pos: tuple[int, int],
     goal_pos: tuple[int, int],
+    doors: tuple[MiniHackDoorSpec, ...] = (),
 ) -> str:
     width = max(len(row) for row in map_lines)
     height = len(map_lines)
@@ -99,6 +107,7 @@ def _des_for_map(
     # The destination side of BRANCH just has to differ from the source area.
     bx, by = (0, 0) if (sx, sy) != (0, 0) else (1, 1)
 
+    door_lines = [f"DOOR:{door.state},({door.pos[0]},{door.pos[1]})" for door in doors]
     return "\n".join(
         [
             "MAZE: \"mylevel\", ' '",
@@ -111,6 +120,7 @@ def _des_for_map(
             f'REGION:(0,0,{width - 1},{height - 1}),lit,"ordinary"',
             f"BRANCH:({sx},{sy},{sx},{sy}),({bx},{by},{bx},{by})",
             f"STAIR:({gx},{gy}),down",
+            *door_lines,
             "",
         ]
     )
@@ -160,6 +170,19 @@ SKILLWM_MINIHACK_TASKS: dict[str, MiniHackTaskSpec] = {
         goal_pos=(7, 2),
         max_episode_steps=50,
         hazard_tiles=("}",),
+    ),
+    "skillwm-door-hall": MiniHackTaskSpec(
+        env_id="skillwm-door-hall",
+        description="Reach the staircase through a required closed door.",
+        map_lines=(
+            "       ",
+            "...+...",
+            "       ",
+        ),
+        start_pos=(1, 1),
+        goal_pos=(5, 1),
+        max_episode_steps=50,
+        doors=(MiniHackDoorSpec((3, 1), "closed"),),
     ),
 }
 
