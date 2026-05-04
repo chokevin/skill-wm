@@ -1,4 +1,4 @@
-.PHONY: help install sync test lint fix format check smoke minihack-smoke skill-jepa-smoke collect-small collect-full eval-local \
+.PHONY: help install sync test lint fix format check smoke minihack-smoke skill-jepa-smoke minihack-jepa-data skill-jepa-eval collect-small collect-full eval-local \
         agent-pilot agent-goal-pilot agent-achievement-pilot clean all \
         rune-setup rune-collect-local rune-collect rune-collect-dry rune-train-dry rune-eval-dry
 
@@ -13,6 +13,7 @@ help:
 	@echo "  smoke         5-episode rollout to verify end-to-end"
 	@echo "  minihack-smoke  optional MiniHack rollout smoke test"
 	@echo "  skill-jepa-smoke  train tiny MiniHack Skill-JEPA on smoke rollouts"
+	@echo "  skill-jepa-eval  held-out-seed MiniHack Skill-JEPA eval"
 	@echo "  collect-small 50-episode rollout (~30s)"
 	@echo "  collect-full  500-episode rollout (~5min)"
 	@echo "  eval-local    run baselines on data/rollouts/smoke (no LLM)"
@@ -58,6 +59,14 @@ minihack-smoke:
 
 skill-jepa-smoke: minihack-smoke
 	uv run --extra train python -m skill_wm.models.skill_jepa --data data/rollouts/minihack-smoke --epochs 10 --batch-size 8
+
+minihack-jepa-data:
+	rm -rf data/rollouts/minihack-jepa-controlled
+	uv run --extra minihack python -m skill_wm.data.collect_minihack --env-id skillwm-room-goal --episodes 8 --max-steps 30 --policy scripted_nav --seed-start 1000 --out data/rollouts/minihack-jepa-controlled/room-goal
+	uv run --extra minihack python -m skill_wm.data.collect_minihack --env-id skillwm-lava-detour --episodes 8 --max-steps 50 --policy scripted_nav --seed-start 1000 --out data/rollouts/minihack-jepa-controlled/lava-detour
+
+skill-jepa-eval: minihack-jepa-data
+	uv run --extra train python -m skill_wm.models.skill_jepa --data data/rollouts/minihack-jepa-controlled --epochs 20 --batch-size 16 --train-frac 0.5 --seed 7 --out data/eval/minihack-skill-jepa-controlled.json
 
 collect-small:
 	uv run python -m skill_wm.data.collect --episodes 50 --max-steps 200 --policy biased_random --out data/rollouts/small
