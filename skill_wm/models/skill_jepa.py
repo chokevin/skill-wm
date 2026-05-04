@@ -25,6 +25,8 @@ from skill_wm.envs.minihack_tasks import get_minihack_task_spec
 TEXT_VOCAB_SIZE = 512
 TEXT_TOKENS = 16
 BLSTATS_DIM = 27
+OBJECT_TILES: tuple[str, ...] = (" ", ".", ">", "L", "#", "+", "?")
+OBJECT_TILE_TO_IDX: dict[str, int] = {tile: i for i, tile in enumerate(OBJECT_TILES)}
 
 _ACTION_DELTAS: dict[str, tuple[int, int]] = {
     "north": (0, -1),
@@ -88,6 +90,10 @@ class MiniHackJEPAVocab:
     def action_vocab_size(self) -> int:
         return len(self.action_to_idx) + 1
 
+    @property
+    def object_vocab_size(self) -> int:
+        return len(OBJECT_TILES)
+
     def encode_glyphs(self, glyphs: np.ndarray) -> np.ndarray:
         out = np.zeros(glyphs.shape, dtype=np.int64)
         for raw, idx in self.glyph_to_idx.items():
@@ -116,6 +122,10 @@ def _pad_blstats(value: np.ndarray) -> np.ndarray:
     arr = np.asarray(value, dtype=np.float32).ravel()[:BLSTATS_DIM]
     out[: arr.shape[0]] = arr
     return out / 100.0
+
+
+def _object_tile_idx(tile: str) -> int:
+    return OBJECT_TILE_TO_IDX.get(tile, OBJECT_TILE_TO_IDX["?"])
 
 
 def load_minihack_jepa_shard(path: Path) -> list[MiniHackJEPARow]:
@@ -202,6 +212,7 @@ class _MiniHackJEPADataset(Dataset):
 
     def __getitem__(self, i: int):
         row = self.rows[i]
+        _, target_tile, after_tile = object_tiles(row)
         return {
             "glyph_before": torch.from_numpy(self.vocab.encode_glyphs(row.glyph_before)),
             "glyph_after": torch.from_numpy(self.vocab.encode_glyphs(row.glyph_after)),
@@ -212,6 +223,8 @@ class _MiniHackJEPADataset(Dataset):
             "inventory_before": torch.from_numpy(_encode_text(row.inventory_before)),
             "inventory_after": torch.from_numpy(_encode_text(row.inventory_after)),
             "action": torch.tensor(self.vocab.encode_action(row.action_name), dtype=torch.long),
+            "target_tile": torch.tensor(_object_tile_idx(target_tile), dtype=torch.long),
+            "after_tile": torch.tensor(_object_tile_idx(after_tile), dtype=torch.long),
             "success": torch.tensor(float(row.success), dtype=torch.float32),
         }
 
@@ -264,7 +277,13 @@ class MiniHackStateEncoder(nn.Module):
 
 
 class MiniHackSkillJEPANet(nn.Module):
-    def __init__(self, glyph_vocab_size: int, action_vocab_size: int, latent_dim: int = 64):
+    def __init__(
+        self,
+        glyph_vocab_size: int,
+        action_vocab_size: int,
+        object_vocab_size: int = len(OBJECT_TILES),
+        latent_dim: int = 64,
+    ):
         super().__init__()
         self.encoder = MiniHackStateEncoder(glyph_vocab_size, latent_dim=latent_dim)
         self.action_emb = nn.Embedding(action_vocab_size, latent_dim)
@@ -278,6 +297,16 @@ class MiniHackSkillJEPANet(nn.Module):
             nn.ReLU(),
             nn.Linear(latent_dim, action_vocab_size),
         )
+        self.target_object = nn.Sequential(
+            nn.Linear(latent_dim * 2, latent_dim),
+            nn.ReLU(),
+            nn.Linear(latent_dim, object_vocab_size),
+        )
+        self.after_object = nn.Sequential(
+            nn.Linear(latent_dim, latent_dim),
+            nn.ReLU(),
+            nn.Linear(latent_dim, object_vocab_size),
+        )
 
     def encode_batch(self, batch: dict[str, torch.Tensor], suffix: str) -> torch.Tensor:
         return self.encoder(
@@ -289,6 +318,17 @@ class MiniHackSkillJEPANet(nn.Module):
 
     def predict_next(self, z_before: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         return self.predictor(torch.cat([z_before, self.action_emb(action)], dim=1))
+
+    def object_logits(
+        self,
+        z_before: torch.Tensor,
+        action: torch.Tensor,
+        pred: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        action_emb = self.action_emb(action)
+        target_logits = self.target_object(torch.cat([z_before, action_emb], dim=1))
+        after_logits = self.after_object(pred)
+        return target_logits, after_logits
 
 
 def anti_collapse_loss(z: torch.Tensor, eps: float = 1e-4) -> torch.Tensor:
@@ -313,6 +353,7 @@ class SkillJEPAConfig:
     pred_weight: float = 1.0
     reg_weight: float = 0.05
     inverse_weight: float = 0.1
+    object_aux_weight: float = 0.0
     seed: int = 0
     device: str = "cpu"
 
@@ -321,7 +362,11 @@ class MiniHackSkillJEPA:
     def __init__(self, vocab: MiniHackJEPAVocab, config: SkillJEPAConfig | None = None):
         self.vocab = vocab
         self.config = config or SkillJEPAConfig()
-        self.net = MiniHackSkillJEPANet(vocab.glyph_vocab_size, vocab.action_vocab_size)
+        self.net = MiniHackSkillJEPANet(
+            vocab.glyph_vocab_size,
+            vocab.action_vocab_size,
+            vocab.object_vocab_size,
+        )
         self.history: list[dict[str, float]] = []
 
     def fit(self, rows: list[MiniHackJEPARow]) -> None:
@@ -353,10 +398,20 @@ class MiniHackSkillJEPA:
                 )
                 inv_loss = F.cross_entropy(inv_logits, batch["action"])
                 reg_loss = anti_collapse_loss(torch.cat([z_before, z_after], dim=0))
+                target_logits, after_logits = self.net.object_logits(
+                    z_before,
+                    batch["action"],
+                    pred,
+                )
+                object_loss = F.cross_entropy(
+                    target_logits,
+                    batch["target_tile"],
+                ) + F.cross_entropy(after_logits, batch["after_tile"])
                 loss = (
                     self.config.pred_weight * pred_loss
                     + self.config.inverse_weight * inv_loss
                     + self.config.reg_weight * reg_loss
+                    + self.config.object_aux_weight * object_loss
                 )
                 opt.zero_grad()
                 loss.backward()
@@ -366,9 +421,15 @@ class MiniHackSkillJEPA:
             self.history.append({"epoch": float(epoch), "loss": total / max(seen, 1)})
 
     @torch.no_grad()
-    def surprise(self, rows: list[MiniHackJEPARow]) -> np.ndarray:
+    def score_rows(self, rows: list[MiniHackJEPARow]) -> dict[str, np.ndarray]:
         if not rows:
-            return np.array([], dtype=np.float64)
+            empty = np.array([], dtype=np.float64)
+            return {
+                "latent_surprise": empty,
+                "target_object_nll": empty,
+                "after_object_nll": empty,
+                "object_nll": empty,
+            }
         device = next(self.net.parameters()).device
         self.net.eval()
         loader = DataLoader(
@@ -377,15 +438,41 @@ class MiniHackSkillJEPA:
             shuffle=False,
             drop_last=False,
         )
-        scores: list[np.ndarray] = []
+        latent_scores: list[np.ndarray] = []
+        target_nll: list[np.ndarray] = []
+        after_nll: list[np.ndarray] = []
         for batch in loader:
             batch = {k: v.to(device) for k, v in batch.items()}
             z_before = self.net.encode_batch(batch, "before")
             z_after = self.net.encode_batch(batch, "after")
             pred = self.net.predict_next(z_before, batch["action"])
             score = (pred - z_after).pow(2).mean(dim=1)
-            scores.append(score.cpu().numpy())
-        return np.concatenate(scores).astype(np.float64)
+            target_logits, after_logits = self.net.object_logits(z_before, batch["action"], pred)
+            target_nll.append(
+                F.cross_entropy(
+                    target_logits,
+                    batch["target_tile"],
+                    reduction="none",
+                )
+                .cpu()
+                .numpy()
+            )
+            after_nll.append(
+                F.cross_entropy(after_logits, batch["after_tile"], reduction="none").cpu().numpy()
+            )
+            latent_scores.append(score.cpu().numpy())
+        target_arr = np.concatenate(target_nll).astype(np.float64)
+        after_arr = np.concatenate(after_nll).astype(np.float64)
+        return {
+            "latent_surprise": np.concatenate(latent_scores).astype(np.float64),
+            "target_object_nll": target_arr,
+            "after_object_nll": after_arr,
+            "object_nll": target_arr + after_arr,
+        }
+
+    @torch.no_grad()
+    def surprise(self, rows: list[MiniHackJEPARow]) -> np.ndarray:
+        return self.score_rows(rows)["latent_surprise"]
 
 
 def split_rows_by_seed(
@@ -456,12 +543,17 @@ def _tile_at(env_id: str, pos: tuple[int, int]) -> str:
     return row[x]
 
 
-def object_signature(row: MiniHackJEPARow) -> str:
+def object_tiles(row: MiniHackJEPARow) -> tuple[str, str, str]:
     dx, dy = _ACTION_DELTAS.get(row.action_name, (0, 0))
     target = (row.logical_pos_before[0] + dx, row.logical_pos_before[1] + dy)
     before_tile = _tile_at(row.env_id, row.logical_pos_before)
     target_tile = _tile_at(row.env_id, target)
     after_tile = _tile_at(row.env_id, row.logical_pos_after)
+    return before_tile, target_tile, after_tile
+
+
+def object_signature(row: MiniHackJEPARow) -> str:
+    before_tile, target_tile, after_tile = object_tiles(row)
     return f"{row.action_name}|{before_tile}->{target_tile}->{after_tile}"
 
 
@@ -568,6 +660,36 @@ def coverage_summary(
     return out
 
 
+def summarize_object_aux(
+    rows: list[MiniHackJEPARow],
+    vocab: MiniHackJEPAVocab,
+    scores: dict[str, np.ndarray],
+) -> dict[str, float | int]:
+    object_nll = scores["object_nll"]
+    target_nll = scores["target_object_nll"]
+    after_nll = scores["after_object_nll"]
+    object_oov = np.array(
+        [object_signature(r) not in vocab.object_signatures for r in rows],
+        dtype=bool,
+    )
+    out: dict[str, float | int] = {
+        "rows": len(rows),
+        "mean_object_nll": float(np.mean(object_nll)) if len(object_nll) else float("nan"),
+        "mean_target_object_nll": float(np.mean(target_nll)) if len(target_nll) else float("nan"),
+        "mean_after_object_nll": float(np.mean(after_nll)) if len(after_nll) else float("nan"),
+        "object_signature_oov_rate": float(object_oov.mean()) if len(object_oov) else float("nan"),
+    }
+    if object_oov.any():
+        out["object_oov_nll"] = float(np.mean(object_nll[object_oov]))
+        out["target_object_oov_nll"] = float(np.mean(target_nll[object_oov]))
+        out["after_object_oov_nll"] = float(np.mean(after_nll[object_oov]))
+    if (~object_oov).any():
+        out["object_known_nll"] = float(np.mean(object_nll[~object_oov]))
+        out["target_object_known_nll"] = float(np.mean(target_nll[~object_oov]))
+        out["after_object_known_nll"] = float(np.mean(after_nll[~object_oov]))
+    return out
+
+
 def train_eval_summary(
     rows: list[MiniHackJEPARow],
     config: SkillJEPAConfig,
@@ -591,8 +713,8 @@ def train_eval_summary(
     vocab = MiniHackJEPAVocab.from_rows(train)
     model = MiniHackSkillJEPA(vocab, config)
     model.fit(train)
-    train_scores = model.surprise(train)
-    eval_scores = model.surprise(evalu)
+    train_scores = model.score_rows(train)
+    eval_scores = model.score_rows(evalu)
     train_seeds = sorted({r.seed for r in train})
     eval_seeds = sorted({r.seed for r in evalu})
     split_summary = {
@@ -608,7 +730,7 @@ def train_eval_summary(
         "train_policy_names": sorted({r.policy_name for r in train}),
         "eval_policy_names": sorted({r.policy_name for r in evalu}),
     }
-    return {
+    summary = {
         "rows": len(rows),
         "split": split_summary,
         "seed_split": split_summary,
@@ -618,15 +740,21 @@ def train_eval_summary(
             "action_names": sorted(vocab.action_to_idx),
         },
         "coverage": {
-            "train": coverage_summary(train, vocab, train_scores),
-            "eval": coverage_summary(evalu, vocab, eval_scores),
+            "train": coverage_summary(train, vocab, train_scores["latent_surprise"]),
+            "eval": coverage_summary(evalu, vocab, eval_scores["latent_surprise"]),
         },
         "config": asdict(config),
         "final_loss": model.history[-1]["loss"],
         "history": model.history,
-        "train": summarize_surprise(train, train_scores),
-        "eval": summarize_surprise(evalu, eval_scores),
+        "train": summarize_surprise(train, train_scores["latent_surprise"]),
+        "eval": summarize_surprise(evalu, eval_scores["latent_surprise"]),
     }
+    if config.object_aux_weight > 0:
+        summary["object_aux"] = {
+            "train": summarize_object_aux(train, vocab, train_scores),
+            "eval": summarize_object_aux(evalu, vocab, eval_scores),
+        }
+    return summary
 
 
 def _print_summary(summary: dict[str, object]) -> None:
@@ -650,6 +778,8 @@ def _print_summary(summary: dict[str, object]) -> None:
     print("  train surprise:", train)
     print("  eval surprise:", evalu)
     print("  eval coverage:", summary["coverage"]["eval"])
+    if "object_aux" in summary:
+        print("  object aux eval:", summary["object_aux"]["eval"])
 
 
 def main() -> None:
@@ -659,6 +789,7 @@ def main() -> None:
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--train-frac", type=float, default=0.6)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--object-aux-weight", type=float, default=0.0)
     p.add_argument("--split", choices=("seed", "task", "policy"), default="seed")
     p.add_argument("--eval-env-id", help="MiniHack env_id to hold out when --split=task.")
     p.add_argument("--eval-policy", help="Policy name to hold out when --split=policy.")
@@ -668,7 +799,12 @@ def main() -> None:
     rows = load_minihack_jepa_dir(args.data)
     summary = train_eval_summary(
         rows,
-        SkillJEPAConfig(epochs=args.epochs, batch_size=args.batch_size, seed=args.seed),
+        SkillJEPAConfig(
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            seed=args.seed,
+            object_aux_weight=args.object_aux_weight,
+        ),
         train_frac=args.train_frac,
         split=args.split,
         eval_env_id=args.eval_env_id,

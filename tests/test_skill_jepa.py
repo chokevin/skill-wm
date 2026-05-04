@@ -227,3 +227,25 @@ def test_train_eval_summary_supports_policy_split() -> None:
     assert summary["split"]["train_policy_names"] == ["scripted_nav"]
     assert summary["split"]["eval_policy_names"] == ["lava_probe"]
     assert summary["coverage"]["eval"]["object_signature_oov_rate"] > 0.0
+
+
+def test_train_eval_summary_reports_object_aux_when_enabled() -> None:
+    rows = [
+        _row(
+            i,
+            action_name="east",
+            env_id="skillwm-lava-detour",
+            policy_name="scripted_nav" if i < 16 else "lava_probe",
+        )
+        for i in range(32)
+    ]
+    rows[-1] = replace(rows[-1], logical_pos_before=(3, 2), logical_pos_after=(3, 2))
+    summary = train_eval_summary(
+        rows,
+        SkillJEPAConfig(epochs=2, batch_size=8, seed=9, object_aux_weight=0.2),
+        split="policy",
+        eval_policy_name="lava_probe",
+    )
+    assert "object_aux" in summary
+    assert summary["object_aux"]["eval"]["mean_object_nll"] > 0.0
+    assert summary["object_aux"]["eval"]["object_signature_oov_rate"] > 0.0
