@@ -12,19 +12,27 @@ from skill_wm.models.skill_jepa import (
     SkillJEPAConfig,
     coverage_summary,
     load_minihack_jepa_shard,
+    object_signature,
     split_rows_by_env,
+    split_rows_by_policy,
     split_rows_by_seed,
     train_eval_summary,
 )
 
 
-def _row(i: int, action_name: str = "east", env_id: str = "skillwm-room-goal") -> MiniHackJEPARow:
+def _row(
+    i: int,
+    action_name: str = "east",
+    env_id: str = "skillwm-room-goal",
+    policy_name: str = "scripted_nav",
+) -> MiniHackJEPARow:
     before = np.full((15, 15), 100 + i % 3, dtype=np.int16)
     after = before.copy()
     after[7, 7] = 200 + (i % 5)
     return MiniHackJEPARow(
         seed=i // 4,
         env_id=env_id,
+        policy_name=policy_name,
         episode=0,
         step=i,
         action=0,
@@ -62,6 +70,7 @@ def test_load_minihack_jepa_shard(tmp_path: Path) -> None:
         path,
         seed=np.array([row.seed], dtype=np.int32),
         env_id=np.array([row.env_id]),
+        policy_name=np.array([row.policy_name]),
         episode=np.array([row.episode], dtype=np.int32),
         step=np.array([row.step], dtype=np.int32),
         action=np.array([row.action], dtype=np.int32),
@@ -84,6 +93,7 @@ def test_load_minihack_jepa_shard(tmp_path: Path) -> None:
     rows = load_minihack_jepa_shard(path)
     assert len(rows) == 1
     assert rows[0].env_id == "skillwm-room-goal"
+    assert rows[0].policy_name == "scripted_nav"
     assert rows[0].action_name == "east"
     assert rows[0].logical_pos_before == (1, 2)
     assert rows[0].glyph_before.shape == (15, 15)
@@ -119,6 +129,13 @@ def test_split_rows_by_env_holds_out_task() -> None:
     train, evalu = split_rows_by_env(rows, eval_env_id="skillwm-lava-detour")
     assert {r.env_id for r in train} == {"skillwm-room-goal"}
     assert {r.env_id for r in evalu} == {"skillwm-lava-detour"}
+
+
+def test_split_rows_by_policy_holds_out_interaction_policy() -> None:
+    rows = [_row(i, policy_name="scripted_nav" if i < 12 else "lava_probe") for i in range(24)]
+    train, evalu = split_rows_by_policy(rows, eval_policy_name="lava_probe")
+    assert {r.policy_name for r in train} == {"scripted_nav"}
+    assert {r.policy_name for r in evalu} == {"lava_probe"}
 
 
 def test_train_eval_summary_is_json_ready() -> None:
@@ -178,3 +195,35 @@ def test_coverage_summary_identifies_lava_probe_transition() -> None:
     coverage = coverage_summary(evalu, vocab, np.array([5.0, 1.0]))
     assert coverage["lava_probe_rate"] == 0.5
     assert coverage["lava_probe_surprise"] == 5.0
+
+
+def test_object_signature_marks_lava_target() -> None:
+    row = replace(
+        _row(0, action_name="east", env_id="skillwm-lava-detour"),
+        logical_pos_before=(3, 2),
+        logical_pos_after=(3, 2),
+    )
+    assert object_signature(row) == "east|.->L->."
+
+
+def test_train_eval_summary_supports_policy_split() -> None:
+    rows = [
+        _row(
+            i,
+            action_name="east",
+            env_id="skillwm-lava-detour",
+            policy_name="scripted_nav" if i < 16 else "lava_probe",
+        )
+        for i in range(32)
+    ]
+    rows[-1] = replace(rows[-1], logical_pos_before=(3, 2), logical_pos_after=(3, 2))
+    summary = train_eval_summary(
+        rows,
+        SkillJEPAConfig(epochs=2, batch_size=8, seed=8),
+        split="policy",
+        eval_policy_name="lava_probe",
+    )
+    assert summary["split"]["mode"] == "policy"
+    assert summary["split"]["train_policy_names"] == ["scripted_nav"]
+    assert summary["split"]["eval_policy_names"] == ["lava_probe"]
+    assert summary["coverage"]["eval"]["object_signature_oov_rate"] > 0.0

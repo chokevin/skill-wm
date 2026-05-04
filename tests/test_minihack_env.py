@@ -107,10 +107,15 @@ def test_minihack_npz_writer_preserves_core_fields():
     )
     wrapper.reset(episode=0)
     transition, *_ = wrapper.step(1)
-    data = minihack_transitions_to_npz([transition], env_id="skillwm-room-goal")
+    data = minihack_transitions_to_npz(
+        [transition],
+        env_id="skillwm-room-goal",
+        policy_name="scripted_nav",
+    )
 
     assert data["action_name"].tolist() == ["open"]
     assert data["env_id"].tolist() == ["skillwm-room-goal"]
+    assert data["policy_name"].tolist() == ["scripted_nav"]
     assert data["logical_pos_before"].tolist() == [[1, 2]]
     assert data["logical_pos_after"].tolist() == [[2, 2]]
     assert data["success"].tolist() == [True]

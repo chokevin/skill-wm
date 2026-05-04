@@ -20,15 +20,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
+from skill_wm.envs.minihack_tasks import get_minihack_task_spec
+
 TEXT_VOCAB_SIZE = 512
 TEXT_TOKENS = 16
 BLSTATS_DIM = 27
+
+_ACTION_DELTAS: dict[str, tuple[int, int]] = {
+    "north": (0, -1),
+    "east": (1, 0),
+    "south": (0, 1),
+    "west": (-1, 0),
+}
 
 
 @dataclass(frozen=True)
 class MiniHackJEPARow:
     seed: int
     env_id: str
+    policy_name: str
     episode: int
     step: int
     action: int
@@ -52,18 +62,22 @@ class MiniHackJEPARow:
 class MiniHackJEPAVocab:
     glyph_to_idx: dict[int, int]
     action_to_idx: dict[str, int]
+    object_signatures: frozenset[str] = frozenset()
 
     @classmethod
     def from_rows(cls, rows: list[MiniHackJEPARow]) -> MiniHackJEPAVocab:
         glyphs: set[int] = set()
         actions: set[str] = set()
+        object_signatures: set[str] = set()
         for row in rows:
             glyphs.update(int(x) for x in row.glyph_before.ravel())
             glyphs.update(int(x) for x in row.glyph_after.ravel())
             actions.add(row.action_name)
+            object_signatures.add(object_signature(row))
         return cls(
             glyph_to_idx={glyph: i + 1 for i, glyph in enumerate(sorted(glyphs))},
             action_to_idx={name: i + 1 for i, name in enumerate(sorted(actions))},
+            object_signatures=frozenset(object_signatures),
         )
 
     @property
@@ -108,6 +122,9 @@ def load_minihack_jepa_shard(path: Path) -> list[MiniHackJEPARow]:
     f = np.load(path, allow_pickle=True)
     n = int(f["action"].shape[0])
     env_ids = f["env_id"] if "env_id" in f.files else np.array([_infer_env_id(path)] * n)
+    policy_names = (
+        f["policy_name"] if "policy_name" in f.files else np.array([_infer_policy_name(path)] * n)
+    )
     logical_pos_before = (
         f["logical_pos_before"]
         if "logical_pos_before" in f.files
@@ -124,6 +141,7 @@ def load_minihack_jepa_shard(path: Path) -> list[MiniHackJEPARow]:
             MiniHackJEPARow(
                 seed=int(f["seed"][i]),
                 env_id=str(env_ids[i]),
+                policy_name=str(policy_names[i]),
                 episode=int(f["episode"][i]),
                 step=int(f["step"][i]),
                 action=int(f["action"][i]),
@@ -153,6 +171,15 @@ def _infer_env_id(path: Path) -> str:
     if name == "lava-detour":
         return "skillwm-lava-detour"
     return name
+
+
+def _infer_policy_name(path: Path) -> str:
+    name = path.parent.name
+    if "lava-probe" in name:
+        return "lava_probe"
+    if "noisy" in name:
+        return "scripted_nav_noisy"
+    return "scripted_nav"
 
 
 def load_minihack_jepa_dir(root: Path) -> list[MiniHackJEPARow]:
@@ -389,6 +416,19 @@ def split_rows_by_env(
     return train, evalu
 
 
+def split_rows_by_policy(
+    rows: list[MiniHackJEPARow], eval_policy_name: str
+) -> tuple[list[MiniHackJEPARow], list[MiniHackJEPARow]]:
+    train = [r for r in rows if r.policy_name != eval_policy_name]
+    evalu = [r for r in rows if r.policy_name == eval_policy_name]
+    if not train:
+        raise ValueError(f"no train rows after holding out policy_name={eval_policy_name!r}")
+    if not evalu:
+        policies = sorted({r.policy_name for r in rows})
+        raise ValueError(f"no eval rows for policy_name={eval_policy_name!r}; available={policies}")
+    return train, evalu
+
+
 def summarize_surprise(rows: list[MiniHackJEPARow], surprise: np.ndarray) -> dict[str, float | int]:
     labels = np.array([r.success for r in rows], dtype=bool)
     out: dict[str, float | int] = {
@@ -401,6 +441,28 @@ def summarize_surprise(rows: list[MiniHackJEPARow], surprise: np.ndarray) -> dic
     if (~labels).any():
         out["non_success_surprise"] = float(np.mean(surprise[~labels]))
     return out
+
+
+def _tile_at(env_id: str, pos: tuple[int, int]) -> str:
+    spec = get_minihack_task_spec(env_id)
+    if spec is None:
+        return "?"
+    x, y = pos
+    if y < 0 or y >= len(spec.map_lines):
+        return " "
+    row = spec.map_lines[y]
+    if x < 0 or x >= len(row):
+        return " "
+    return row[x]
+
+
+def object_signature(row: MiniHackJEPARow) -> str:
+    dx, dy = _ACTION_DELTAS.get(row.action_name, (0, 0))
+    target = (row.logical_pos_before[0] + dx, row.logical_pos_before[1] + dy)
+    before_tile = _tile_at(row.env_id, row.logical_pos_before)
+    target_tile = _tile_at(row.env_id, target)
+    after_tile = _tile_at(row.env_id, row.logical_pos_after)
+    return f"{row.action_name}|{before_tile}->{target_tile}->{after_tile}"
 
 
 def coverage_summary(
@@ -433,6 +495,11 @@ def coverage_summary(
         ],
         dtype=bool,
     )
+    object_signatures = [object_signature(r) for r in rows]
+    object_oov = np.array(
+        [sig not in vocab.object_signatures for sig in object_signatures],
+        dtype=bool,
+    )
     glyph_before_oov: list[bool] = []
     glyph_after_oov: list[bool] = []
     glyph_before_unknown = 0
@@ -462,10 +529,16 @@ def coverage_summary(
         "rows": len(rows),
         "env_ids": sorted({r.env_id for r in rows}),
         "action_names": sorted({r.action_name for r in rows}),
+        "policy_names": sorted({r.policy_name for r in rows}),
         "action_oov_names": sorted(
             {r.action_name for r in rows if r.action_name not in vocab.action_to_idx}
         ),
         "action_oov_rate": float(action_oov.mean()),
+        "object_signatures": sorted(set(object_signatures)),
+        "object_oov_signatures": sorted(
+            {sig for sig in object_signatures if sig not in vocab.object_signatures}
+        ),
+        "object_signature_oov_rate": float(object_oov.mean()),
         "done_rate": float(np.mean([r.done for r in rows])),
         "mean_reward": float(np.mean([r.reward for r in rows])),
         "lava_message_rate": float(lava_message.mean()),
@@ -488,6 +561,10 @@ def coverage_summary(
             out["lava_message_surprise"] = float(np.mean(surprise[lava_message]))
         if lava_probe.any():
             out["lava_probe_surprise"] = float(np.mean(surprise[lava_probe]))
+        if object_oov.any():
+            out["object_oov_surprise"] = float(np.mean(surprise[object_oov]))
+        if (~object_oov).any():
+            out["object_known_surprise"] = float(np.mean(surprise[~object_oov]))
     return out
 
 
@@ -497,6 +574,7 @@ def train_eval_summary(
     train_frac: float = 0.6,
     split: str = "seed",
     eval_env_id: str | None = None,
+    eval_policy_name: str | None = None,
 ) -> dict[str, object]:
     if split == "seed":
         train, evalu = split_rows_by_seed(rows, train_frac=train_frac, seed=config.seed)
@@ -504,6 +582,10 @@ def train_eval_summary(
         if eval_env_id is None:
             raise ValueError("eval_env_id is required for task split")
         train, evalu = split_rows_by_env(rows, eval_env_id=eval_env_id)
+    elif split == "policy":
+        if eval_policy_name is None:
+            raise ValueError("eval_policy_name is required for policy split")
+        train, evalu = split_rows_by_policy(rows, eval_policy_name=eval_policy_name)
     else:
         raise ValueError(f"unknown split: {split}")
     vocab = MiniHackJEPAVocab.from_rows(train)
@@ -518,10 +600,13 @@ def train_eval_summary(
         "seed": config.seed,
         "train_frac": train_frac,
         "eval_env_id": eval_env_id,
+        "eval_policy_name": eval_policy_name,
         "train_seeds": train_seeds,
         "eval_seeds": eval_seeds,
         "train_env_ids": sorted({r.env_id for r in train}),
         "eval_env_ids": sorted({r.env_id for r in evalu}),
+        "train_policy_names": sorted({r.policy_name for r in train}),
+        "eval_policy_names": sorted({r.policy_name for r in evalu}),
     }
     return {
         "rows": len(rows),
@@ -554,6 +639,10 @@ def _print_summary(summary: dict[str, object]) -> None:
     print("MiniHack Skill-JEPA prototype")
     print(f"  split: {split['mode']}")
     print(f"  train envs: {split['train_env_ids']}  eval envs: {split['eval_env_ids']}")
+    print(
+        f"  train policies: {split['train_policy_names']}  "
+        f"eval policies: {split['eval_policy_names']}"
+    )
     print(f"  train seeds: {split['train_seeds']}  eval seeds: {split['eval_seeds']}")
     print(f"  train rows: {train['rows']}  eval rows: {evalu['rows']}")
     print(f"  glyph vocab: {vocab['glyph_vocab_size']}  action vocab: {vocab['action_vocab_size']}")
@@ -570,8 +659,9 @@ def main() -> None:
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--train-frac", type=float, default=0.6)
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--split", choices=("seed", "task"), default="seed")
+    p.add_argument("--split", choices=("seed", "task", "policy"), default="seed")
     p.add_argument("--eval-env-id", help="MiniHack env_id to hold out when --split=task.")
+    p.add_argument("--eval-policy", help="Policy name to hold out when --split=policy.")
     p.add_argument("--out", type=Path, help="Optional JSON summary output path.")
     args = p.parse_args()
 
@@ -582,6 +672,7 @@ def main() -> None:
         train_frac=args.train_frac,
         split=args.split,
         eval_env_id=args.eval_env_id,
+        eval_policy_name=args.eval_policy,
     )
     _print_summary(summary)
     if args.out is not None:

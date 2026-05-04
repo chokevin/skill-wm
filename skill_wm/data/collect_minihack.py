@@ -126,7 +126,9 @@ def _policy_context(
 
 
 def minihack_transitions_to_npz(
-    transitions: list[MiniHackTransition], env_id: str | None = None
+    transitions: list[MiniHackTransition],
+    env_id: str | None = None,
+    policy_name: str | None = None,
 ) -> dict[str, np.ndarray]:
     """Pack MiniHack transitions into arrays for one shard."""
 
@@ -153,6 +155,7 @@ def minihack_transitions_to_npz(
         "step": np.array([t.step for t in transitions], dtype=np.int32),
         "seed": np.array([t.seed for t in transitions], dtype=np.int32),
         "env_id": np.array([env_id or "" for _ in transitions]),
+        "policy_name": np.array([policy_name or "" for _ in transitions]),
         "action": np.array([t.action for t in transitions], dtype=np.int32),
         "action_name": np.array([t.action_name for t in transitions]),
         "success": np.array([t.success for t in transitions], dtype=np.bool_),
@@ -230,7 +233,11 @@ def collect(
             if done:
                 break
 
-        data = minihack_transitions_to_npz(transitions, env_id=env_id)
+        data = minihack_transitions_to_npz(
+            transitions,
+            env_id=env_id,
+            policy_name=policy_name,
+        )
         safe_env = env_id.replace("/", "_")
         out_path = out_dir / f"ep_{ep:06d}_seed_{ep_seed:06d}_{safe_env}_{policy_name}.npz"
         np.savez_compressed(out_path, **data)
