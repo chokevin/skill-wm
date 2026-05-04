@@ -75,6 +75,7 @@ make skill-jepa-hazard-eval # noisy-room to deliberate lava-probe diagnostic
 make skill-jepa-interaction-eval # safe-lava to lava-probe interaction diagnostic
 make skill-jepa-cjepa-eval # baseline vs object-aux Skill-JEPA diagnostic
 make skill-jepa-rerank-eval # reject unsafe lava action with object-head reranker
+make skill-jepa-live-rerank-eval # live lava-detour behavior eval with shield baselines
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -149,7 +150,14 @@ heads alongside the latent prediction objective. Use
 `make skill-jepa-rerank-eval` for the first decision-time check: train the
 object-auxiliary model on safe lava-detour trajectories, score all cardinal
 actions at the held-out lava-probe state by target-object NLL, and fail if the
-reranker keeps the unsafe proposed `east` action.
+reranker keeps the unsafe proposed `east` action. Use
+`make skill-jepa-live-rerank-eval` for the live behavior check: run fixed-seed
+lava-detour episodes for `scripted_nav`, `lava_probe`, `oracle_object_shield`,
+`latent_mse_rerank`, and `object_rerank_lava_probe`, then fail unless the
+object-head reranker improves over the unsafe lava-probe policy while reporting
+the shield and latent-only comparator metrics. The latent-only comparator uses
+the same held-out object-signature trigger as the object reranker, but scores
+candidates with latent MSE rather than target-object NLL.
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
 CMake first if your platform has to build NLE from source:
