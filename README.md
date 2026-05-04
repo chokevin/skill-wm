@@ -77,6 +77,7 @@ make skill-jepa-cjepa-eval # baseline vs object-aux Skill-JEPA diagnostic
 make skill-jepa-rerank-eval # reject unsafe lava action with object-head reranker
 make skill-jepa-live-rerank-eval # live lava-detour behavior eval with shield baselines
 make skill-jepa-live-rerank-two-probe-eval # live two-position lava-probe rerank gate
+make skill-jepa-live-rerank-west-coverage-eval # live west probe with safe-west action coverage
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -152,20 +153,28 @@ heads alongside the latent prediction objective. Use
 object-auxiliary model on safe lava-detour trajectories, score all cardinal
 actions at the held-out lava-probe state by target-object NLL, and fail if the
 reranker keeps the unsafe proposed `east` action. Use
-`make skill-jepa-live-rerank-eval` for the live behavior check: run fixed-seed
-lava-detour episodes for `scripted_nav`, `lava_probe`, `oracle_object_shield`,
-`latent_mse_rerank`, and `object_rerank_lava_probe`, then fail unless the
-object-head reranker improves over the unsafe lava-probe policy while reporting
-the shield and latent-only comparator metrics. The latent-only comparator uses
-the same held-out object-signature trigger as the object reranker, but scores
-candidates with latent MSE rather than target-object NLL. Use
+`make skill-jepa-live-rerank-eval` for the live behavior check: run fixed
+lava-detour episode seeds across multiple model seeds for `scripted_nav`,
+`lava_probe`, `oracle_object_shield`, `latent_mse_rerank`, and
+`object_rerank_lava_probe`, then fail unless the object-head reranker improves
+over the unsafe lava-probe policy while reporting the shield and latent-only
+comparator metrics. The latent-only comparator uses the same held-out
+object-signature trigger as the object reranker, but scores candidates with
+latent MSE rather than target-object NLL. Use
 `make skill-jepa-live-rerank-two-probe-eval` to run that same live gate on both
 the original `(3,2) + east` lava probe and a second `(3,1) + east` probe. The
 second probe checks that the object-head signal is not a single saved-state
-artifact, and the gate requires object-head reranking to reduce unsafe lava
-executions versus the latent-MSE comparator. Exploratory west-side probes are
+artifact, and the aggregate multi-model-seed gate requires object-head reranking
+to reduce unsafe lava executions versus the latent-MSE comparator. Exploratory
+west-side probes are
 available through `--probe west`, but the latent-MSE comparator can also solve
-that variant, so it is not the clean paper gate.
+that variant, so it is not the clean paper gate. Use
+`make skill-jepa-live-rerank-west-coverage-eval` to build a separate coverage
+dataset with `scripted_nav_safe_west` rows before evaluating the west-side probe;
+this controls the `west` action-coverage confound and reports whether the
+object-head signal still blocks `west -> lava`. In the current controlled seeds,
+both object-head reranking and latent-MSE reranking solve that covered-west
+variant, so it is robustness evidence rather than the headline differentiator.
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
 CMake first if your platform has to build NLE from source:

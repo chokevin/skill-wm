@@ -56,6 +56,34 @@ def scripted_nav_noisy_policy(
     return scripted_nav_policy(rng, num_actions, info)
 
 
+def scripted_nav_safe_west_policy(
+    rng: np.random.Generator, num_actions: int, info: dict[str, Any] | None = None
+) -> int:
+    """Follow the lava-detour route but insert one safe west action for coverage."""
+
+    if (
+        not info
+        or info.get("env_id") != "skillwm-lava-detour"
+        or "obs" not in info
+        or "action_names" not in info
+    ):
+        return scripted_nav_policy(rng, num_actions, info)
+
+    memory = info.get("policy_memory")
+    if not isinstance(memory, dict):
+        memory = {}
+    blstats = np.asarray(info["obs"]["blstats"])
+    coord_offset = tuple(int(x) for x in info.get("coord_offset", (0, 0)))
+    logical_pos = (int(blstats[0]) - coord_offset[0], int(blstats[1]) - coord_offset[1])
+    if logical_pos == (2, 0) and not memory.get("safe_west_done"):
+        memory["safe_west_done"] = True
+        try:
+            return tuple(str(x) for x in info["action_names"]).index("west")
+        except ValueError:
+            return scripted_nav_policy(rng, num_actions, info)
+    return scripted_nav_policy(rng, num_actions, info)
+
+
 def lava_probe_policy(
     rng: np.random.Generator, num_actions: int, info: dict[str, Any] | None = None
 ) -> int:
@@ -102,6 +130,7 @@ POLICIES: dict[str, Callable[[np.random.Generator, int, dict[str, Any] | None], 
     "random": random_policy,
     "scripted_nav": scripted_nav_policy,
     "scripted_nav_noisy": scripted_nav_noisy_policy,
+    "scripted_nav_safe_west": scripted_nav_safe_west_policy,
     "lava_probe": lava_probe_policy,
 }
 
