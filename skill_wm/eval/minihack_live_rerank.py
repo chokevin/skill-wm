@@ -609,7 +609,48 @@ def run_live_eval(
     }
 
 
-def require_object_improves(summary: dict[str, object]) -> None:
+def aggregate_live_summaries(summaries: list[dict[str, object]]) -> dict[str, object]:
+    if not summaries:
+        raise ValueError("cannot aggregate zero live eval summaries")
+    if len(summaries) == 1:
+        return summaries[0]
+
+    base = summaries[0]
+    policies = base["policies"]
+    assert isinstance(policies, dict)
+    model_seeds = [int(summary["config"]["seed"]) for summary in summaries]  # type: ignore[index]
+    aggregate_policies: dict[str, object] = {}
+    for policy_name in policies:
+        episodes_detail: list[dict[str, object]] = []
+        for summary in summaries:
+            summary_policies = summary["policies"]
+            assert isinstance(summary_policies, dict)
+            policy = summary_policies[policy_name]
+            assert isinstance(policy, dict)
+            model_seed = int(summary["config"]["seed"])  # type: ignore[index]
+            for episode in policy["episodes_detail"]:
+                assert isinstance(episode, dict)
+                episodes_detail.append({**episode, "model_seed": model_seed})
+        aggregate_policies[policy_name] = summarize_policy(policy_name, episodes_detail)
+
+    return {
+        "env_id": base["env_id"],
+        "probe": base["probe"],
+        "train_rows": base["train_rows"],
+        "policies": aggregate_policies,
+        "config": {**base["config"], "model_seeds": model_seeds},
+        "runs": summaries,
+        "episodes": int(base["episodes"]) * len(summaries),
+        "episodes_per_model_seed": base["episodes"],
+        "model_seeds": model_seeds,
+        "seed_start": base["seed_start"],
+        "max_steps": base["max_steps"],
+        "object_threshold": base["object_threshold"],
+        "latent_threshold": base["latent_threshold"],
+    }
+
+
+def require_object_improves(summary: dict[str, object], *, require_beat_latent: bool = True) -> None:
     policies = summary["policies"]
     assert isinstance(policies, dict)
     lava = policies["lava_probe"]
@@ -629,7 +670,7 @@ def require_object_improves(summary: dict[str, object]) -> None:
     if int(obj["overrides"]) < 1:
         raise SystemExit("object rerank did not override any proposed unsafe action")
     latent = policies.get("latent_mse_rerank")
-    if isinstance(latent, dict) and int(obj["unsafe_lava_executed"]) >= int(
+    if require_beat_latent and isinstance(latent, dict) and int(obj["unsafe_lava_executed"]) >= int(
         latent["unsafe_lava_executed"]
     ):
         raise SystemExit(
@@ -642,6 +683,8 @@ def print_summary(summary: dict[str, object]) -> None:
     print("MiniHack live object-rerank eval")
     print(f"  env_id: {summary['env_id']}")
     print(f"  probe: {summary['probe']}")
+    if "model_seeds" in summary:
+        print(f"  model_seeds: {summary['model_seeds']}")
     print(f"  train rows: {summary['train_rows']}")
     policies = summary["policies"]
     assert isinstance(policies, dict)
@@ -668,6 +711,12 @@ def main() -> None:
     p.add_argument("--epochs", type=int, default=20)
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--seed", type=int, default=7)
+    p.add_argument(
+        "--model-seeds",
+        nargs="+",
+        type=int,
+        help="Train/evaluate multiple model seeds and aggregate policy metrics.",
+    )
     p.add_argument("--object-aux-weight", type=float, default=0.2)
     p.add_argument("--object-threshold", type=float, default=1.0)
     p.add_argument("--latent-threshold", type=float, default=0.0)
@@ -677,25 +726,36 @@ def main() -> None:
         action="store_true",
         help="Exit non-zero unless object rerank improves over lava_probe.",
     )
+    p.add_argument(
+        "--allow-latent-match",
+        action="store_true",
+        help="When requiring improvement, do not require object rerank to beat latent-MSE.",
+    )
     args = p.parse_args()
 
     rows = load_minihack_jepa_dir(args.data)
-    summary = run_live_eval(
-        rows=rows,
-        config=SkillJEPAConfig(
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            seed=args.seed,
-            object_aux_weight=args.object_aux_weight,
-        ),
-        env_id=args.env_id,
-        policies=tuple(args.policies),
-        episodes=args.episodes,
-        seed_start=args.seed_start,
-        max_steps=args.max_steps,
-        object_threshold=args.object_threshold,
-        latent_threshold=args.latent_threshold,
-        probe_name=args.probe,
+    model_seeds = args.model_seeds if args.model_seeds is not None else [args.seed]
+    summary = aggregate_live_summaries(
+        [
+            run_live_eval(
+                rows=rows,
+                config=SkillJEPAConfig(
+                    epochs=args.epochs,
+                    batch_size=args.batch_size,
+                    seed=model_seed,
+                    object_aux_weight=args.object_aux_weight,
+                ),
+                env_id=args.env_id,
+                policies=tuple(args.policies),
+                episodes=args.episodes,
+                seed_start=args.seed_start,
+                max_steps=args.max_steps,
+                object_threshold=args.object_threshold,
+                latent_threshold=args.latent_threshold,
+                probe_name=args.probe,
+            )
+            for model_seed in model_seeds
+        ]
     )
     print_summary(summary)
 
@@ -705,7 +765,7 @@ def main() -> None:
         print(f"  wrote: {args.out}")
 
     if args.require_object_improves:
-        require_object_improves(summary)
+        require_object_improves(summary, require_beat_latent=not args.allow_latent_match)
 
 
 if __name__ == "__main__":

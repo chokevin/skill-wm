@@ -7,6 +7,7 @@ from skill_wm.data.collect_minihack import (
     minihack_transitions_to_npz,
     scripted_nav_noisy_policy,
     scripted_nav_policy,
+    scripted_nav_safe_west_policy,
 )
 from skill_wm.envs.minihack_env import (
     MiniHackWrapper,
@@ -187,3 +188,41 @@ def test_lava_probe_policy_takes_one_unsafe_probe_then_recovers():
     assert spec.action_names[first] == "east"
     assert memory["lava_probe_done"] is True
     assert spec.action_names[second] != "east"
+
+
+def test_safe_west_policy_adds_one_safe_west_action_then_recovers():
+    spec = get_minihack_task_spec("skillwm-lava-detour")
+    assert spec is not None
+    memory: dict[str, bool] = {}
+    info = {
+        "env_id": spec.env_id,
+        "action_names": spec.action_names,
+        "coord_offset": (34, 9),
+        "policy_memory": memory,
+        "obs": {"blstats": np.array([36, 9, 0], dtype=np.int32)},
+    }
+    first = scripted_nav_safe_west_policy(np.random.default_rng(0), len(spec.action_names), info)
+    second = scripted_nav_safe_west_policy(np.random.default_rng(0), len(spec.action_names), info)
+
+    assert spec.action_names[first] == "west"
+    assert memory["safe_west_done"] is True
+    assert spec.action_names[second] != "west"
+
+
+def test_safe_west_trigger_is_on_lava_detour_scripted_route():
+    spec = get_minihack_task_spec("skillwm-lava-detour")
+    assert spec is not None
+    pos = spec.start_pos
+    route = [pos]
+    deltas = {"north": (0, -1), "east": (1, 0), "south": (0, 1), "west": (-1, 0)}
+    for _ in range(12):
+        action = spec.next_action_toward_goal(pos)
+        if action is None:
+            break
+        dx, dy = deltas[action]
+        pos = (pos[0] + dx, pos[1] + dy)
+        route.append(pos)
+
+    assert (2, 0) in route
+    assert spec.map_lines[0][1] == "."
+    assert spec.map_lines[0][2] == "."

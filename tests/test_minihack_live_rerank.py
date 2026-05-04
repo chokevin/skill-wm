@@ -7,6 +7,7 @@ import numpy as np
 from skill_wm.envs.minihack_tasks import MINIHACK_CARDINAL_ACTION_NAMES
 from skill_wm.eval.minihack_live_rerank import (
     LIVE_PROBES,
+    aggregate_live_summaries,
     is_unsafe_lava_action,
     live_candidate_rows,
     live_probe_policy,
@@ -180,3 +181,123 @@ def test_require_object_improves_checks_success_and_unsafe_moves() -> None:
     }
 
     require_object_improves(summary)
+
+
+def test_require_object_improves_can_allow_latent_match() -> None:
+    summary = {
+        "policies": {
+            "lava_probe": {
+                "success_rate": 0.0,
+                "unsafe_lava_executed": 4,
+                "overrides": 0,
+            },
+            "object_rerank_lava_probe": {
+                "success_rate": 1.0,
+                "unsafe_lava_executed": 0,
+                "overrides": 4,
+            },
+            "latent_mse_rerank": {
+                "success_rate": 1.0,
+                "unsafe_lava_executed": 0,
+                "overrides": 4,
+            },
+        }
+    }
+
+    require_object_improves(summary, require_beat_latent=False)
+
+
+def test_aggregate_live_summaries_combines_model_seed_runs() -> None:
+    def summary(model_seed: int, latent_unsafe: int) -> dict[str, object]:
+        return {
+            "env_id": "skillwm-lava-detour",
+            "probe": {"name": "east", "target_pos": (3, 2), "unsafe_action": "east"},
+            "train_rows": 10,
+            "config": {"seed": model_seed},
+            "episodes": 1,
+            "seed_start": 5000,
+            "max_steps": 50,
+            "object_threshold": 1.0,
+            "latent_threshold": 0.0,
+            "policies": {
+                "lava_probe": {
+                    "policy_name": "lava_probe",
+                    "episodes": 1,
+                    "successes": 0,
+                    "success_rate": 0.0,
+                    "transitions": 1,
+                    "reward_total": 0.0,
+                    "unsafe_lava_proposals": 1,
+                    "unsafe_lava_executed": 1,
+                    "overrides": 0,
+                    "probe_selected_actions": ["east"],
+                    "episodes_detail": [
+                        {
+                            "success": False,
+                            "transitions": 1,
+                            "reward_total": 0.0,
+                            "unsafe_lava_proposals": 1,
+                            "unsafe_lava_executed": 1,
+                            "overrides": 0,
+                            "probe_selected_actions": ["east"],
+                        }
+                    ],
+                },
+                "latent_mse_rerank": {
+                    "policy_name": "latent_mse_rerank",
+                    "episodes": 1,
+                    "successes": int(latent_unsafe == 0),
+                    "success_rate": float(latent_unsafe == 0),
+                    "transitions": 1,
+                    "reward_total": 0.0,
+                    "unsafe_lava_proposals": 1,
+                    "unsafe_lava_executed": latent_unsafe,
+                    "overrides": int(latent_unsafe == 0),
+                    "probe_selected_actions": ["east"],
+                    "episodes_detail": [
+                        {
+                            "success": latent_unsafe == 0,
+                            "transitions": 1,
+                            "reward_total": 0.0,
+                            "unsafe_lava_proposals": 1,
+                            "unsafe_lava_executed": latent_unsafe,
+                            "overrides": int(latent_unsafe == 0),
+                            "probe_selected_actions": ["east"],
+                        }
+                    ],
+                },
+                "object_rerank_lava_probe": {
+                    "policy_name": "object_rerank_lava_probe",
+                    "episodes": 1,
+                    "successes": 1,
+                    "success_rate": 1.0,
+                    "transitions": 1,
+                    "reward_total": 0.0,
+                    "unsafe_lava_proposals": 1,
+                    "unsafe_lava_executed": 0,
+                    "overrides": 1,
+                    "probe_selected_actions": ["north"],
+                    "episodes_detail": [
+                        {
+                            "success": True,
+                            "transitions": 1,
+                            "reward_total": 0.0,
+                            "unsafe_lava_proposals": 1,
+                            "unsafe_lava_executed": 0,
+                            "overrides": 1,
+                            "probe_selected_actions": ["north"],
+                        }
+                    ],
+                },
+            },
+        }
+
+    aggregate = aggregate_live_summaries([summary(1, 1), summary(7, 0)])
+
+    assert aggregate["model_seeds"] == [1, 7]
+    policies = aggregate["policies"]
+    assert isinstance(policies, dict)
+    assert policies["latent_mse_rerank"]["unsafe_lava_executed"] == 1
+    assert policies["object_rerank_lava_probe"]["unsafe_lava_executed"] == 0
+    assert policies["object_rerank_lava_probe"]["episodes_detail"][0]["model_seed"] == 1
+    require_object_improves(aggregate)
