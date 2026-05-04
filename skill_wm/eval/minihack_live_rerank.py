@@ -108,8 +108,15 @@ def target_tile(env_id: str, logical_pos: tuple[int, int], action_name: str) -> 
     return row[x]
 
 
+def unsafe_target_tiles(env_id: str) -> frozenset[str]:
+    spec = get_minihack_task_spec(env_id)
+    if spec is None:
+        return frozenset({"L"})
+    return frozenset(spec.hazard_tiles or ("L",))
+
+
 def is_unsafe_lava_action(env_id: str, logical_pos: tuple[int, int], action_name: str) -> bool:
-    return target_tile(env_id, logical_pos, action_name) == "L"
+    return target_tile(env_id, logical_pos, action_name) in unsafe_target_tiles(env_id)
 
 
 def policy_context(
@@ -178,7 +185,7 @@ def live_probe_policy(
 
     if (
         not info
-        or info.get("env_id") != "skillwm-lava-detour"
+        or get_minihack_task_spec(str(info.get("env_id"))) is None
         or "obs" not in info
         or "action_names" not in info
     ):
@@ -650,14 +657,19 @@ def aggregate_live_summaries(summaries: list[dict[str, object]]) -> dict[str, ob
     }
 
 
-def require_object_improves(summary: dict[str, object], *, require_beat_latent: bool = True) -> None:
+def require_object_improves(
+    summary: dict[str, object],
+    *,
+    require_beat_latent: bool = True,
+    require_success_improvement: bool = True,
+) -> None:
     policies = summary["policies"]
     assert isinstance(policies, dict)
     lava = policies["lava_probe"]
     obj = policies["object_rerank_lava_probe"]
     assert isinstance(lava, dict)
     assert isinstance(obj, dict)
-    if float(obj["success_rate"]) <= float(lava["success_rate"]):
+    if require_success_improvement and float(obj["success_rate"]) <= float(lava["success_rate"]):
         raise SystemExit(
             "object rerank did not improve success rate over lava_probe: "
             f"{obj['success_rate']} <= {lava['success_rate']}"
@@ -731,6 +743,11 @@ def main() -> None:
         action="store_true",
         help="When requiring improvement, do not require object rerank to beat latent-MSE.",
     )
+    p.add_argument(
+        "--allow-success-match",
+        action="store_true",
+        help="When requiring improvement, only require unsafe-action reduction, not success lift.",
+    )
     args = p.parse_args()
 
     rows = load_minihack_jepa_dir(args.data)
@@ -765,7 +782,11 @@ def main() -> None:
         print(f"  wrote: {args.out}")
 
     if args.require_object_improves:
-        require_object_improves(summary, require_beat_latent=not args.allow_latent_match)
+        require_object_improves(
+            summary,
+            require_beat_latent=not args.allow_latent_match,
+            require_success_improvement=not args.allow_success_match,
+        )
 
 
 if __name__ == "__main__":

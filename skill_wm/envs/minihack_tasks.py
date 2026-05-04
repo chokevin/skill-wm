@@ -29,6 +29,7 @@ class MiniHackTaskSpec:
     goal_pos: tuple[int, int]
     max_episode_steps: int = 80
     action_names: tuple[str, ...] = MINIHACK_CARDINAL_ACTION_NAMES
+    hazard_tiles: tuple[str, ...] = ()
 
     @property
     def des_file(self) -> str:
@@ -143,6 +144,22 @@ SKILLWM_MINIHACK_TASKS: dict[str, MiniHackTaskSpec] = {
         start_pos=(1, 2),
         goal_pos=(7, 2),
         max_episode_steps=50,
+        hazard_tiles=("L",),
+    ),
+    "skillwm-water-detour": MiniHackTaskSpec(
+        env_id="skillwm-water-detour",
+        description="Reach the staircase while detouring around a water column.",
+        map_lines=(
+            ".........",
+            "....}....",
+            "....}....",
+            "....}....",
+            ".........",
+        ),
+        start_pos=(1, 2),
+        goal_pos=(7, 2),
+        max_episode_steps=50,
+        hazard_tiles=("}",),
     ),
 }
 
