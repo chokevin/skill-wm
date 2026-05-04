@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import numpy as np
 
-from skill_wm.data.collect_minihack import minihack_transitions_to_npz
+from skill_wm.data.collect_minihack import minihack_transitions_to_npz, scripted_nav_policy
 from skill_wm.envs.minihack_env import (
     MiniHackWrapper,
     crop_grid,
     decode_inventory,
     decode_nle_text,
     find_player_pos,
+    minihack_success,
 )
+from skill_wm.envs.minihack_tasks import get_minihack_task_spec
 
 
 def _obs(row: int, col: int, message: str = "") -> dict:
@@ -107,3 +109,37 @@ def test_minihack_npz_writer_preserves_core_fields():
     assert data["glyph_crop_before"].shape == (1, 3, 3)
     assert data["message_after"].tolist() == ["opened"]
     assert data["inventory_before"].tolist() == ["a key"]
+
+
+def test_minihack_success_reads_end_status():
+    class _TaskStatus:
+        name = "TASK_SUCCESSFUL"
+
+    assert minihack_success(0.0, {"end_status": _TaskStatus()}) is True
+    assert minihack_success(0.0, {"end_status": "StepStatus.TASK_SUCCESSFUL"}) is True
+    assert minihack_success(0.0, {"end_status": "RUNNING"}) is False
+
+
+def test_registered_tasks_define_des_and_paths():
+    room = get_minihack_task_spec("skillwm-room-goal")
+    assert room is not None
+    assert "STAIR:(7,2),down" in room.des_file
+    assert room.next_action_toward_goal((1, 2)) == "east"
+    assert room.next_action_toward_goal((35, 11), coord_offset=(34, 9)) == "east"
+
+    lava = get_minihack_task_spec("skillwm-lava-detour")
+    assert lava is not None
+    assert lava.next_action_toward_goal((3, 2)) != "east"
+
+
+def test_scripted_nav_policy_uses_task_shortest_path():
+    spec = get_minihack_task_spec("skillwm-room-goal")
+    assert spec is not None
+    info = {
+        "env_id": spec.env_id,
+        "action_names": spec.action_names,
+        "coord_offset": (34, 9),
+        "obs": {"blstats": np.array([35, 11, 0], dtype=np.int32)},
+    }
+    action = scripted_nav_policy(np.random.default_rng(0), len(spec.action_names), info)
+    assert spec.action_names[action] == "east"

@@ -125,6 +125,15 @@ def decode_inventory(obs: dict[str, Any]) -> tuple[str, ...]:
     return tuple(items)
 
 
+def copy_obs_dict(obs: dict[str, Any]) -> dict[str, Any]:
+    """Copy an observation dict because NLE can mutate array buffers in-place."""
+
+    out: dict[str, Any] = {}
+    for key, value in obs.items():
+        out[key] = value.copy() if isinstance(value, np.ndarray) else value
+    return out
+
+
 def find_player_pos(obs: dict[str, Any]) -> tuple[int, int]:
     """Find the player on the visible terminal grid.
 
@@ -168,13 +177,19 @@ def minihack_success(reward: float, info_after: dict[str, Any]) -> bool:
 
     Positive reward is the stable cross-task signal. Some wrappers also expose
     explicit booleans such as ``success`` or ``task_success``; honor those when
-    present so custom tasks can provide sharper labels later.
+    present so custom tasks can provide sharper labels later. MiniHack itself
+    reports custom-task completion through ``end_status``.
     """
 
     for key in ("success", "task_success", "goal_reached"):
         value = info_after.get(key)
         if isinstance(value, bool):
             return value
+    end_status = info_after.get("end_status")
+    if end_status is not None:
+        status_name = str(getattr(end_status, "name", end_status)).split(".")[-1]
+        if str(status_name).upper() in {"TASK_SUCCESSFUL", "SUCCESS", "ASCENDED"}:
+            return True
     return float(reward) > 0.0
 
 
@@ -197,11 +212,26 @@ class MiniHackWrapper:
         self._last_info: dict[str, Any] | None = None
         self._crop_half = crop_half
 
+        from skill_wm.envs.minihack_tasks import get_minihack_task_spec
+
+        self.task_spec = get_minihack_task_spec(env_id)
         self.env = env if env is not None else self._make_env(env_id)
-        self._action_names = action_names or self._infer_action_names()
+        self._action_names = (
+            action_names
+            or (self.task_spec.action_names if self.task_spec is not None else None)
+            or self._infer_action_names()
+        )
 
     @staticmethod
     def _make_env(env_id: str) -> Any:
+        from skill_wm.envs.minihack_tasks import (
+            get_minihack_task_spec,
+            make_skillwm_minihack_env,
+        )
+
+        if get_minihack_task_spec(env_id) is not None:
+            return make_skillwm_minihack_env(env_id)
+
         try:
             import gymnasium as gym
             import minihack  # noqa: F401  # registers environments
@@ -241,7 +271,7 @@ class MiniHackWrapper:
         else:
             obs, info = result, {}
 
-        self._last_obs = dict(obs)
+        self._last_obs = copy_obs_dict(dict(obs))
         self._last_info = dict(info)
         return self._last_obs, self._last_info
 
@@ -251,7 +281,7 @@ class MiniHackWrapper:
         if not 0 <= int(action) < self.num_actions:
             raise ValueError(f"action {action} out of range for {self.num_actions} actions")
 
-        obs_before = self._last_obs
+        obs_before = copy_obs_dict(self._last_obs)
         result = self.env.step(int(action))
         if not isinstance(result, tuple):
             raise TypeError(f"env.step() must return a tuple, got {type(result).__name__}")
@@ -264,6 +294,7 @@ class MiniHackWrapper:
         else:
             raise ValueError(f"env.step() returned {len(result)} values; expected 4 or 5")
 
+        obs_after = copy_obs_dict(dict(obs_after))
         info_after = dict(info_after)
         transition = MiniHackTransition(
             seed=self._seed,
@@ -272,12 +303,12 @@ class MiniHackWrapper:
             action=int(action),
             action_name=self._action_names[int(action)],
             state_before=state_from_obs(obs_before, half=self._crop_half),
-            state_after=state_from_obs(dict(obs_after), half=self._crop_half),
+            state_after=state_from_obs(obs_after, half=self._crop_half),
             reward=float(reward),
             done=done,
             success=minihack_success(float(reward), info_after),
         )
         self._step += 1
-        self._last_obs = dict(obs_after)
+        self._last_obs = obs_after
         self._last_info = info_after
         return transition, self._last_obs, info_after, done
