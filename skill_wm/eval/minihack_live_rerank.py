@@ -29,6 +29,7 @@ LIVE_POLICIES: tuple[str, ...] = (
     "oracle_object_shield",
     "latent_mse_rerank",
     "object_rerank_lava_probe",
+    "object_progress_rerank",
 )
 
 
@@ -175,6 +176,38 @@ def next_action_toward_pos(
         node = prev[0]
         prev = parent[node]
     return prev[1] if prev is not None else None
+
+
+def shortest_goal_distance(env_id: str, pos: tuple[int, int]) -> int | None:
+    spec = get_minihack_task_spec(env_id)
+    if spec is None or pos not in spec.walkable:
+        return None
+    if pos == spec.goal_pos:
+        return 0
+
+    frontier = [pos]
+    distance: dict[tuple[int, int], int] = {pos: 0}
+    for cur in frontier:
+        for dx, dy in _ACTION_DELTAS.values():
+            nxt = (cur[0] + dx, cur[1] + dy)
+            if nxt in distance or nxt not in spec.walkable:
+                continue
+            distance[nxt] = distance[cur] + 1
+            if nxt == spec.goal_pos:
+                return distance[nxt]
+            frontier.append(nxt)
+    return None
+
+
+def action_reduces_goal_distance(
+    env_id: str,
+    logical_pos: tuple[int, int],
+    action_name: str,
+) -> bool:
+    before = shortest_goal_distance(env_id, logical_pos)
+    dx, dy = _ACTION_DELTAS.get(action_name, (0, 0))
+    after = shortest_goal_distance(env_id, (logical_pos[0] + dx, logical_pos[1] + dy))
+    return before is not None and after is not None and after < before
 
 
 def live_probe_policy(
@@ -426,6 +459,22 @@ def select_live_action(
                 score_key=score_key,
                 override_threshold=object_threshold,
             )
+        elif policy_name == "object_progress_rerank":
+            if not action_reduces_goal_distance(env_id, logical_pos, proposed_action):
+                score_key = "target_object_nll"
+                selected_action, proposed_score, selected_score, scores = rerank_decision(
+                    model=models.object_model,
+                    obs=obs,
+                    env_id=env_id,
+                    action_names=action_names,
+                    coord_offset=coord_offset,
+                    seed=seed,
+                    episode=episode,
+                    step=step,
+                    proposed_action=proposed_action,
+                    score_key=score_key,
+                    override_threshold=object_threshold,
+                )
         elif policy_name != "lava_probe":
             raise ValueError(f"unknown live policy: {policy_name}")
 
@@ -712,6 +761,7 @@ def print_summary(summary: dict[str, object]) -> None:
             f"  {policy_name}: "
             f"success={raw['successes']}/{raw['episodes']} "
             f"unsafe_executed={raw['unsafe_lava_executed']} "
+            f"probe_proposals={raw.get('probe_proposals', 0)} "
             f"overrides={raw['overrides']} "
             f"probe_selected={raw['probe_selected_actions']}"
         )
