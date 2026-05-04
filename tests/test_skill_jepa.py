@@ -5,6 +5,12 @@ from pathlib import Path
 
 import numpy as np
 
+from skill_wm.eval.minihack_object_rerank import (
+    candidate_rows,
+    choose_action,
+    find_lava_probe_state,
+    run_rerank,
+)
 from skill_wm.models.skill_jepa import (
     MiniHackJEPARow,
     MiniHackJEPAVocab,
@@ -249,3 +255,58 @@ def test_train_eval_summary_reports_object_aux_when_enabled() -> None:
     assert "object_aux" in summary
     assert summary["object_aux"]["eval"]["mean_object_nll"] > 0.0
     assert summary["object_aux"]["eval"]["object_signature_oov_rate"] > 0.0
+
+
+def test_object_rerank_candidate_rows_use_same_state() -> None:
+    base = replace(
+        _row(0, action_name="east", env_id="skillwm-lava-detour", policy_name="lava_probe"),
+        logical_pos_before=(3, 2),
+        logical_pos_after=(3, 2),
+    )
+    candidates = candidate_rows(base, ("north", "east", "south", "west"))
+    assert [row.action_name for row in candidates] == ["north", "east", "south", "west"]
+    assert {row.logical_pos_before for row in candidates} == {(3, 2)}
+    assert object_signature(candidates[1]) == "east|.->L->."
+
+
+def test_choose_action_takes_lowest_target_object_nll() -> None:
+    scores = [
+        {"action_name": "east", "target_object_nll": 10.0},
+        {"action_name": "north", "target_object_nll": 1.0},
+    ]
+    assert choose_action(scores) == "north"
+
+
+def test_find_lava_probe_state() -> None:
+    rows = [
+        _row(0, action_name="east", env_id="skillwm-lava-detour", policy_name="scripted_nav"),
+        replace(
+            _row(1, action_name="east", env_id="skillwm-lava-detour", policy_name="lava_probe"),
+            logical_pos_before=(3, 2),
+        ),
+    ]
+    assert find_lava_probe_state(rows).policy_name == "lava_probe"
+
+
+def test_run_rerank_reports_candidate_scores() -> None:
+    safe_rows = [
+        _row(
+            i,
+            action_name="east" if i % 2 else "north",
+            env_id="skillwm-lava-detour",
+            policy_name="scripted_nav",
+        )
+        for i in range(16)
+    ]
+    probe = replace(
+        _row(30, action_name="east", env_id="skillwm-lava-detour", policy_name="lava_probe"),
+        logical_pos_before=(3, 2),
+        logical_pos_after=(3, 2),
+    )
+    summary = run_rerank(
+        [*safe_rows, probe],
+        SkillJEPAConfig(epochs=2, batch_size=8, seed=10, object_aux_weight=0.2),
+    )
+    assert summary["proposed_action"] == "east"
+    assert len(summary["scores"]) == 4
+    assert any(row["action_name"] == "east" for row in summary["scores"])
