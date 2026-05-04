@@ -30,4 +30,4 @@ checkpoints/
 # Eval outputs and LLM cache
 eval-*.json
 .skill_wm_llm_cache.json
-
+.skill_wm_llm_cache_*.json

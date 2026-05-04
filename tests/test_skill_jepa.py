@@ -10,6 +10,8 @@ from skill_wm.models.skill_jepa import (
     MiniHackSkillJEPA,
     SkillJEPAConfig,
     load_minihack_jepa_shard,
+    split_rows_by_seed,
+    train_eval_summary,
 )
 
 
@@ -85,3 +87,27 @@ def test_skill_jepa_fit_and_surprise_shape() -> None:
     assert len(model.history) == 2
     assert scores.shape == (len(rows),)
     assert np.isfinite(scores).all()
+
+
+def test_split_rows_by_seed_is_disjoint() -> None:
+    rows = [_row(i) for i in range(24)]
+    train, evalu = split_rows_by_seed(rows, train_frac=0.5, seed=4)
+    train_seeds = {r.seed for r in train}
+    eval_seeds = {r.seed for r in evalu}
+    assert train_seeds
+    assert eval_seeds
+    assert train_seeds.isdisjoint(eval_seeds)
+    assert len(train) + len(evalu) == len(rows)
+
+
+def test_train_eval_summary_is_json_ready() -> None:
+    rows = [_row(i, "east" if i % 2 else "north") for i in range(24)]
+    summary = train_eval_summary(
+        rows,
+        SkillJEPAConfig(epochs=2, batch_size=8, seed=5),
+        train_frac=0.5,
+    )
+    assert summary["rows"] == len(rows)
+    assert summary["train"]["rows"] > 0
+    assert summary["eval"]["rows"] > 0
+    assert np.isfinite(summary["final_loss"])

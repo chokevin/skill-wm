@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
@@ -334,7 +335,9 @@ class MiniHackSkillJEPA:
         return np.concatenate(scores).astype(np.float64)
 
 
-def _split_rows(rows: list[MiniHackJEPARow], train_frac: float, seed: int):
+def split_rows_by_seed(
+    rows: list[MiniHackJEPARow], train_frac: float, seed: int
+) -> tuple[list[MiniHackJEPARow], list[MiniHackJEPARow]]:
     seeds = sorted({r.seed for r in rows})
     if len(seeds) < 2:
         raise ValueError(f"need at least two seeds for split, got {seeds}")
@@ -361,6 +364,55 @@ def summarize_surprise(rows: list[MiniHackJEPARow], surprise: np.ndarray) -> dic
     return out
 
 
+def train_eval_summary(
+    rows: list[MiniHackJEPARow],
+    config: SkillJEPAConfig,
+    train_frac: float = 0.6,
+) -> dict[str, object]:
+    train, evalu = split_rows_by_seed(rows, train_frac=train_frac, seed=config.seed)
+    vocab = MiniHackJEPAVocab.from_rows(rows)
+    model = MiniHackSkillJEPA(vocab, config)
+    model.fit(train)
+    train_scores = model.surprise(train)
+    eval_scores = model.surprise(evalu)
+    train_seeds = sorted({r.seed for r in train})
+    eval_seeds = sorted({r.seed for r in evalu})
+    return {
+        "rows": len(rows),
+        "seed_split": {
+            "seed": config.seed,
+            "train_frac": train_frac,
+            "train_seeds": train_seeds,
+            "eval_seeds": eval_seeds,
+        },
+        "vocab": {
+            "glyph_vocab_size": vocab.glyph_vocab_size,
+            "action_vocab_size": vocab.action_vocab_size,
+        },
+        "config": asdict(config),
+        "final_loss": model.history[-1]["loss"],
+        "history": model.history,
+        "train": summarize_surprise(train, train_scores),
+        "eval": summarize_surprise(evalu, eval_scores),
+    }
+
+
+def _print_summary(summary: dict[str, object]) -> None:
+    split = summary["seed_split"]
+    vocab = summary["vocab"]
+    train = summary["train"]
+    evalu = summary["eval"]
+    assert isinstance(split, dict)
+    assert isinstance(vocab, dict)
+    print("MiniHack Skill-JEPA prototype")
+    print(f"  train seeds: {split['train_seeds']}  eval seeds: {split['eval_seeds']}")
+    print(f"  train rows: {train['rows']}  eval rows: {evalu['rows']}")
+    print(f"  glyph vocab: {vocab['glyph_vocab_size']}  action vocab: {vocab['action_vocab_size']}")
+    print(f"  final loss: {float(summary['final_loss']):.6f}")
+    print("  train surprise:", train)
+    print("  eval surprise:", evalu)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Train a tiny MiniHack Skill-JEPA prototype.")
     p.add_argument("--data", type=Path, default=Path("data/rollouts/minihack-smoke"))
@@ -368,25 +420,20 @@ def main() -> None:
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--train-frac", type=float, default=0.6)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--out", type=Path, help="Optional JSON summary output path.")
     args = p.parse_args()
 
     rows = load_minihack_jepa_dir(args.data)
-    train, evalu = _split_rows(rows, train_frac=args.train_frac, seed=args.seed)
-    vocab = MiniHackJEPAVocab.from_rows(train)
-    model = MiniHackSkillJEPA(
-        vocab,
+    summary = train_eval_summary(
+        rows,
         SkillJEPAConfig(epochs=args.epochs, batch_size=args.batch_size, seed=args.seed),
+        train_frac=args.train_frac,
     )
-    model.fit(train)
-    train_scores = model.surprise(train)
-    eval_scores = model.surprise(evalu)
-
-    print("MiniHack Skill-JEPA prototype")
-    print(f"  train rows: {len(train)}  eval rows: {len(evalu)}")
-    print(f"  glyph vocab: {vocab.glyph_vocab_size}  action vocab: {vocab.action_vocab_size}")
-    print(f"  final loss: {model.history[-1]['loss']:.6f}")
-    print("  train surprise:", summarize_surprise(train, train_scores))
-    print("  eval surprise:", summarize_surprise(evalu, eval_scores))
+    _print_summary(summary)
+    if args.out is not None:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+        print(f"  wrote: {args.out}")
 
 
 if __name__ == "__main__":

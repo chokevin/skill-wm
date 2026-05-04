@@ -68,6 +68,7 @@ make check                # lint + tests
 make smoke                # 5-episode rollout end-to-end
 make minihack-smoke       # optional MiniHack rollout (installs --extra minihack)
 make skill-jepa-smoke     # collect MiniHack smoke + train tiny Skill-JEPA gate
+make skill-jepa-eval      # held-out-seed MiniHack Skill-JEPA eval JSON
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -91,7 +92,8 @@ uv run python -m skill_wm.agent.run --train-data data/rollouts/collect-002-combi
 uv run --extra minihack python -m skill_wm.data.collect_minihack \
     --env-id skillwm-lava-detour --episodes 10 --max-steps 50 --policy scripted_nav
 uv run --extra train python -m skill_wm.models.skill_jepa \
-    --data data/rollouts/minihack-smoke --epochs 10 --batch-size 8
+    --data data/rollouts/minihack-smoke --epochs 10 --batch-size 8 \
+    --out data/eval/minihack-skill-jepa-smoke.json
 ```
 
 ## Second environment: MiniHack/NLE
@@ -117,7 +119,10 @@ The first JEPA-shaped gate is intentionally tiny: `skill_wm.models.skill_jepa`
 trains `state_before + action -> latent(state_after)` on MiniHack transition
 NPZs, with glyph crops, BLStats, messages, and inventory strings in the state
 encoder. It reports prediction error as a surprise score so we can test the
-LeCun-inspired shape before committing to a larger Skill-JEPA benchmark.
+LeCun-inspired shape before committing to a larger Skill-JEPA benchmark. Use
+`make skill-jepa-eval` for the repeatable controlled gate: it collects both
+tasks with matched seeds, trains on a seed-disjoint split, and writes
+`data/eval/minihack-skill-jepa-controlled.json`.
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
 CMake first if your platform has to build NLE from source:
