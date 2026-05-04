@@ -74,6 +74,7 @@ make skill-jepa-coverage-eval # noisy-room to lava coverage diagnostic
 make skill-jepa-hazard-eval # noisy-room to deliberate lava-probe diagnostic
 make skill-jepa-interaction-eval # safe-lava to lava-probe interaction diagnostic
 make skill-jepa-cjepa-eval # baseline vs object-aux Skill-JEPA diagnostic
+make skill-jepa-rerank-eval # reject unsafe lava action with object-head reranker
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -144,7 +145,11 @@ the same task. That keeps actions and lava glyphs in-distribution while making
 the unsafe `east|.->L->.` object signature out-of-distribution. Use
 `make skill-jepa-cjepa-eval` to compare the baseline latent predictor against an
 object-auxiliary variant (`--object-aux-weight`) that learns target/after tile
-heads alongside the latent prediction objective.
+heads alongside the latent prediction objective. Use
+`make skill-jepa-rerank-eval` for the first decision-time check: train the
+object-auxiliary model on safe lava-detour trajectories, score all cardinal
+actions at the held-out lava-probe state by target-object NLL, and fail if the
+reranker keeps the unsafe proposed `east` action.
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
 CMake first if your platform has to build NLE from source:
