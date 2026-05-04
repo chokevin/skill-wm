@@ -69,6 +69,7 @@ make smoke                # 5-episode rollout end-to-end
 make minihack-smoke       # optional MiniHack rollout (installs --extra minihack)
 make skill-jepa-smoke     # collect MiniHack smoke + train tiny Skill-JEPA gate
 make skill-jepa-eval      # held-out-seed MiniHack Skill-JEPA eval JSON
+make skill-jepa-task-eval # held-out-task MiniHack Skill-JEPA eval JSONs
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -122,7 +123,10 @@ encoder. It reports prediction error as a surprise score so we can test the
 LeCun-inspired shape before committing to a larger Skill-JEPA benchmark. Use
 `make skill-jepa-eval` for the repeatable controlled gate: it collects both
 tasks with matched seeds, trains on a seed-disjoint split, and writes
-`data/eval/minihack-skill-jepa-controlled.json`.
+`data/eval/minihack-skill-jepa-controlled.json`. Use
+`make skill-jepa-task-eval` for the distribution-shift gate: it trains on one
+controlled task and evaluates on the other, writing room-to-lava and
+lava-to-room JSON summaries under `data/eval/`.
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
 CMake first if your platform has to build NLE from source:

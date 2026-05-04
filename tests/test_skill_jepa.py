@@ -10,17 +10,19 @@ from skill_wm.models.skill_jepa import (
     MiniHackSkillJEPA,
     SkillJEPAConfig,
     load_minihack_jepa_shard,
+    split_rows_by_env,
     split_rows_by_seed,
     train_eval_summary,
 )
 
 
-def _row(i: int, action_name: str = "east") -> MiniHackJEPARow:
+def _row(i: int, action_name: str = "east", env_id: str = "skillwm-room-goal") -> MiniHackJEPARow:
     before = np.full((15, 15), 100 + i % 3, dtype=np.int16)
     after = before.copy()
     after[7, 7] = 200 + (i % 5)
     return MiniHackJEPARow(
         seed=i // 4,
+        env_id=env_id,
         episode=0,
         step=i,
         action=0,
@@ -46,6 +48,7 @@ def test_minihack_jepa_vocab_encodes_glyphs_and_actions() -> None:
     assert encoded.shape == (15, 15)
     assert encoded.max() > 0
     assert vocab.encode_action("east") != vocab.encode_action("north")
+    assert vocab.encode_action("unseen") == 0
 
 
 def test_load_minihack_jepa_shard(tmp_path: Path) -> None:
@@ -54,6 +57,7 @@ def test_load_minihack_jepa_shard(tmp_path: Path) -> None:
     np.savez_compressed(
         path,
         seed=np.array([row.seed], dtype=np.int32),
+        env_id=np.array([row.env_id]),
         episode=np.array([row.episode], dtype=np.int32),
         step=np.array([row.step], dtype=np.int32),
         action=np.array([row.action], dtype=np.int32),
@@ -73,6 +77,7 @@ def test_load_minihack_jepa_shard(tmp_path: Path) -> None:
 
     rows = load_minihack_jepa_shard(path)
     assert len(rows) == 1
+    assert rows[0].env_id == "skillwm-room-goal"
     assert rows[0].action_name == "east"
     assert rows[0].glyph_before.shape == (15, 15)
     assert rows[0].inventory_before == "a key|an apple"
@@ -100,6 +105,15 @@ def test_split_rows_by_seed_is_disjoint() -> None:
     assert len(train) + len(evalu) == len(rows)
 
 
+def test_split_rows_by_env_holds_out_task() -> None:
+    rows = [
+        _row(i, env_id="skillwm-room-goal" if i < 12 else "skillwm-lava-detour") for i in range(24)
+    ]
+    train, evalu = split_rows_by_env(rows, eval_env_id="skillwm-lava-detour")
+    assert {r.env_id for r in train} == {"skillwm-room-goal"}
+    assert {r.env_id for r in evalu} == {"skillwm-lava-detour"}
+
+
 def test_train_eval_summary_is_json_ready() -> None:
     rows = [_row(i, "east" if i % 2 else "north") for i in range(24)]
     summary = train_eval_summary(
@@ -111,3 +125,23 @@ def test_train_eval_summary_is_json_ready() -> None:
     assert summary["train"]["rows"] > 0
     assert summary["eval"]["rows"] > 0
     assert np.isfinite(summary["final_loss"])
+
+
+def test_train_eval_summary_supports_task_split() -> None:
+    rows = [
+        _row(
+            i,
+            action_name="east" if i % 2 else "north",
+            env_id="skillwm-room-goal" if i < 12 else "skillwm-lava-detour",
+        )
+        for i in range(24)
+    ]
+    summary = train_eval_summary(
+        rows,
+        SkillJEPAConfig(epochs=2, batch_size=8, seed=6),
+        split="task",
+        eval_env_id="skillwm-lava-detour",
+    )
+    assert summary["split"]["mode"] == "task"
+    assert summary["split"]["train_env_ids"] == ["skillwm-room-goal"]
+    assert summary["split"]["eval_env_ids"] == ["skillwm-lava-detour"]

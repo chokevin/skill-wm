@@ -28,6 +28,7 @@ BLSTATS_DIM = 27
 @dataclass(frozen=True)
 class MiniHackJEPARow:
     seed: int
+    env_id: str
     episode: int
     step: int
     action: int
@@ -60,7 +61,7 @@ class MiniHackJEPAVocab:
             actions.add(row.action_name)
         return cls(
             glyph_to_idx={glyph: i + 1 for i, glyph in enumerate(sorted(glyphs))},
-            action_to_idx={name: i for i, name in enumerate(sorted(actions))},
+            action_to_idx={name: i + 1 for i, name in enumerate(sorted(actions))},
         )
 
     @property
@@ -69,7 +70,7 @@ class MiniHackJEPAVocab:
 
     @property
     def action_vocab_size(self) -> int:
-        return len(self.action_to_idx)
+        return len(self.action_to_idx) + 1
 
     def encode_glyphs(self, glyphs: np.ndarray) -> np.ndarray:
         out = np.zeros(glyphs.shape, dtype=np.int64)
@@ -78,7 +79,7 @@ class MiniHackJEPAVocab:
         return out
 
     def encode_action(self, action_name: str) -> int:
-        return self.action_to_idx[action_name]
+        return self.action_to_idx.get(action_name, 0)
 
 
 def _hash_token(token: str) -> int:
@@ -104,11 +105,13 @@ def _pad_blstats(value: np.ndarray) -> np.ndarray:
 def load_minihack_jepa_shard(path: Path) -> list[MiniHackJEPARow]:
     f = np.load(path, allow_pickle=True)
     n = int(f["action"].shape[0])
+    env_ids = f["env_id"] if "env_id" in f.files else np.array([_infer_env_id(path)] * n)
     rows: list[MiniHackJEPARow] = []
     for i in range(n):
         rows.append(
             MiniHackJEPARow(
                 seed=int(f["seed"][i]),
+                env_id=str(env_ids[i]),
                 episode=int(f["episode"][i]),
                 step=int(f["step"][i]),
                 action=int(f["action"][i]),
@@ -127,6 +130,15 @@ def load_minihack_jepa_shard(path: Path) -> list[MiniHackJEPARow]:
             )
         )
     return rows
+
+
+def _infer_env_id(path: Path) -> str:
+    name = path.parent.name
+    if name == "room-goal":
+        return "skillwm-room-goal"
+    if name == "lava-detour":
+        return "skillwm-lava-detour"
+    return name
 
 
 def load_minihack_jepa_dir(root: Path) -> list[MiniHackJEPARow]:
@@ -350,6 +362,19 @@ def split_rows_by_seed(
     ]
 
 
+def split_rows_by_env(
+    rows: list[MiniHackJEPARow], eval_env_id: str
+) -> tuple[list[MiniHackJEPARow], list[MiniHackJEPARow]]:
+    train = [r for r in rows if r.env_id != eval_env_id]
+    evalu = [r for r in rows if r.env_id == eval_env_id]
+    if not train:
+        raise ValueError(f"no train rows after holding out env_id={eval_env_id!r}")
+    if not evalu:
+        env_ids = sorted({r.env_id for r in rows})
+        raise ValueError(f"no eval rows for env_id={eval_env_id!r}; available={env_ids}")
+    return train, evalu
+
+
 def summarize_surprise(rows: list[MiniHackJEPARow], surprise: np.ndarray) -> dict[str, float | int]:
     labels = np.array([r.success for r in rows], dtype=bool)
     out: dict[str, float | int] = {
@@ -368,23 +393,38 @@ def train_eval_summary(
     rows: list[MiniHackJEPARow],
     config: SkillJEPAConfig,
     train_frac: float = 0.6,
+    split: str = "seed",
+    eval_env_id: str | None = None,
 ) -> dict[str, object]:
-    train, evalu = split_rows_by_seed(rows, train_frac=train_frac, seed=config.seed)
-    vocab = MiniHackJEPAVocab.from_rows(rows)
+    if split == "seed":
+        train, evalu = split_rows_by_seed(rows, train_frac=train_frac, seed=config.seed)
+    elif split == "task":
+        if eval_env_id is None:
+            raise ValueError("eval_env_id is required for task split")
+        train, evalu = split_rows_by_env(rows, eval_env_id=eval_env_id)
+    else:
+        raise ValueError(f"unknown split: {split}")
+    vocab = MiniHackJEPAVocab.from_rows(train)
     model = MiniHackSkillJEPA(vocab, config)
     model.fit(train)
     train_scores = model.surprise(train)
     eval_scores = model.surprise(evalu)
     train_seeds = sorted({r.seed for r in train})
     eval_seeds = sorted({r.seed for r in evalu})
+    split_summary = {
+        "mode": split,
+        "seed": config.seed,
+        "train_frac": train_frac,
+        "eval_env_id": eval_env_id,
+        "train_seeds": train_seeds,
+        "eval_seeds": eval_seeds,
+        "train_env_ids": sorted({r.env_id for r in train}),
+        "eval_env_ids": sorted({r.env_id for r in evalu}),
+    }
     return {
         "rows": len(rows),
-        "seed_split": {
-            "seed": config.seed,
-            "train_frac": train_frac,
-            "train_seeds": train_seeds,
-            "eval_seeds": eval_seeds,
-        },
+        "split": split_summary,
+        "seed_split": split_summary,
         "vocab": {
             "glyph_vocab_size": vocab.glyph_vocab_size,
             "action_vocab_size": vocab.action_vocab_size,
@@ -398,13 +438,15 @@ def train_eval_summary(
 
 
 def _print_summary(summary: dict[str, object]) -> None:
-    split = summary["seed_split"]
+    split = summary["split"]
     vocab = summary["vocab"]
     train = summary["train"]
     evalu = summary["eval"]
     assert isinstance(split, dict)
     assert isinstance(vocab, dict)
     print("MiniHack Skill-JEPA prototype")
+    print(f"  split: {split['mode']}")
+    print(f"  train envs: {split['train_env_ids']}  eval envs: {split['eval_env_ids']}")
     print(f"  train seeds: {split['train_seeds']}  eval seeds: {split['eval_seeds']}")
     print(f"  train rows: {train['rows']}  eval rows: {evalu['rows']}")
     print(f"  glyph vocab: {vocab['glyph_vocab_size']}  action vocab: {vocab['action_vocab_size']}")
@@ -420,6 +462,8 @@ def main() -> None:
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--train-frac", type=float, default=0.6)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--split", choices=("seed", "task"), default="seed")
+    p.add_argument("--eval-env-id", help="MiniHack env_id to hold out when --split=task.")
     p.add_argument("--out", type=Path, help="Optional JSON summary output path.")
     args = p.parse_args()
 
@@ -428,6 +472,8 @@ def main() -> None:
         rows,
         SkillJEPAConfig(epochs=args.epochs, batch_size=args.batch_size, seed=args.seed),
         train_frac=args.train_frac,
+        split=args.split,
+        eval_env_id=args.eval_env_id,
     )
     _print_summary(summary)
     if args.out is not None:
