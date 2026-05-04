@@ -7,6 +7,7 @@ import numpy as np
 from skill_wm.envs.minihack_tasks import MINIHACK_CARDINAL_ACTION_NAMES
 from skill_wm.eval.minihack_live_rerank import (
     LIVE_PROBES,
+    action_reduces_goal_distance,
     aggregate_live_summaries,
     is_unsafe_lava_action,
     live_candidate_rows,
@@ -67,6 +68,12 @@ def test_live_candidate_rows_mark_door_target() -> None:
     )
 
     assert object_signature(candidates[1]) == "east|.->+->."
+
+
+def test_goal_progress_distinguishes_door_from_hazards() -> None:
+    assert action_reduces_goal_distance("skillwm-door-hall", (2, 1), "east")
+    assert not action_reduces_goal_distance("skillwm-lava-detour", (3, 2), "east")
+    assert not action_reduces_goal_distance("skillwm-water-detour", (3, 2), "east")
 
 
 def test_oracle_object_shield_blocks_lava_target() -> None:

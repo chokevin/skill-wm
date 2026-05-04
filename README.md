@@ -80,6 +80,7 @@ make skill-jepa-live-rerank-two-probe-eval # live two-position lava-probe rerank
 make skill-jepa-live-rerank-west-coverage-eval # live west probe with safe-west action coverage
 make skill-jepa-live-rerank-water-eval # live non-lava water hazard probe
 make skill-jepa-live-rerank-door-diagnostic # required-door overblocking diagnostic
+make skill-jepa-live-rerank-progress-hybrid-diagnostic # oracle progress-gated object rerank diagnostic
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -193,6 +194,15 @@ succeed in 56/56 episodes, latent-MSE succeeds in 15/56, and object-head
 reranking succeeds in 0/56 because it repeatedly selects lower-NLL floor moves
 instead of the novel door interaction. Treat this as a boundary condition:
 object-NLL alone is a hazard/OOD signal, not a complete affordance model.
+The follow-up `make skill-jepa-live-rerank-progress-hybrid-diagnostic` adds an
+oracle progress gate around the same object-NLL signal: actions that reduce the
+task shortest-path distance are accepted, and non-progressing proposals still go
+through object-NLL reranking. This is not a learned method yet; it is an upper
+bound diagnostic for the missing goal/affordance signal. On the current
+multi-model-seed gate, the progress hybrid succeeds on the required-door probe
+in 56/56 episodes while plain object-head reranking remains at 0/56, and it
+still blocks all unsafe interactions on the east-lava and water probes
+(`unsafe_lava_executed=0/56` for both).
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
 CMake first if your platform has to build NLE from source:
