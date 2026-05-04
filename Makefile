@@ -1,4 +1,4 @@
-.PHONY: help install sync test lint fix format check smoke minihack-smoke skill-jepa-smoke minihack-jepa-data skill-jepa-eval collect-small collect-full eval-local \
+.PHONY: help install sync test lint fix format check smoke minihack-smoke skill-jepa-smoke minihack-jepa-data skill-jepa-eval skill-jepa-task-eval collect-small collect-full eval-local \
         agent-pilot agent-goal-pilot agent-achievement-pilot clean all \
         rune-setup rune-collect-local rune-collect rune-collect-dry rune-train-dry rune-eval-dry
 
@@ -14,6 +14,7 @@ help:
 	@echo "  minihack-smoke  optional MiniHack rollout smoke test"
 	@echo "  skill-jepa-smoke  train tiny MiniHack Skill-JEPA on smoke rollouts"
 	@echo "  skill-jepa-eval  held-out-seed MiniHack Skill-JEPA eval"
+	@echo "  skill-jepa-task-eval  held-out-task MiniHack Skill-JEPA eval"
 	@echo "  collect-small 50-episode rollout (~30s)"
 	@echo "  collect-full  500-episode rollout (~5min)"
 	@echo "  eval-local    run baselines on data/rollouts/smoke (no LLM)"
@@ -67,6 +68,10 @@ minihack-jepa-data:
 
 skill-jepa-eval: minihack-jepa-data
 	uv run --extra train python -m skill_wm.models.skill_jepa --data data/rollouts/minihack-jepa-controlled --epochs 20 --batch-size 16 --train-frac 0.5 --seed 7 --out data/eval/minihack-skill-jepa-controlled.json
+
+skill-jepa-task-eval: minihack-jepa-data
+	uv run --extra train python -m skill_wm.models.skill_jepa --data data/rollouts/minihack-jepa-controlled --epochs 20 --batch-size 16 --split task --eval-env-id skillwm-lava-detour --seed 7 --out data/eval/minihack-skill-jepa-room-to-lava.json
+	uv run --extra train python -m skill_wm.models.skill_jepa --data data/rollouts/minihack-jepa-controlled --epochs 20 --batch-size 16 --split task --eval-env-id skillwm-room-goal --seed 7 --out data/eval/minihack-skill-jepa-lava-to-room.json
 
 collect-small:
 	uv run python -m skill_wm.data.collect --episodes 50 --max-steps 200 --policy biased_random --out data/rollouts/small
