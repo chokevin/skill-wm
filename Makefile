@@ -1,4 +1,4 @@
-.PHONY: help install sync test lint fix format check smoke minihack-smoke skill-jepa-smoke minihack-jepa-data skill-jepa-eval skill-jepa-task-eval collect-small collect-full eval-local \
+.PHONY: help install sync test lint fix format check smoke minihack-smoke skill-jepa-smoke minihack-jepa-data skill-jepa-eval skill-jepa-task-eval minihack-jepa-coverage-data skill-jepa-coverage-eval minihack-jepa-hazard-data skill-jepa-hazard-eval collect-small collect-full eval-local \
         agent-pilot agent-goal-pilot agent-achievement-pilot clean all \
         rune-setup rune-collect-local rune-collect rune-collect-dry rune-train-dry rune-eval-dry
 
@@ -15,6 +15,8 @@ help:
 	@echo "  skill-jepa-smoke  train tiny MiniHack Skill-JEPA on smoke rollouts"
 	@echo "  skill-jepa-eval  held-out-seed MiniHack Skill-JEPA eval"
 	@echo "  skill-jepa-task-eval  held-out-task MiniHack Skill-JEPA eval"
+	@echo "  skill-jepa-coverage-eval  noisy-room to lava coverage diagnostic"
+	@echo "  skill-jepa-hazard-eval  noisy-room to deliberate lava-probe diagnostic"
 	@echo "  collect-small 50-episode rollout (~30s)"
 	@echo "  collect-full  500-episode rollout (~5min)"
 	@echo "  eval-local    run baselines on data/rollouts/smoke (no LLM)"
@@ -72,6 +74,22 @@ skill-jepa-eval: minihack-jepa-data
 skill-jepa-task-eval: minihack-jepa-data
 	uv run --extra train python -m skill_wm.models.skill_jepa --data data/rollouts/minihack-jepa-controlled --epochs 20 --batch-size 16 --split task --eval-env-id skillwm-lava-detour --seed 7 --out data/eval/minihack-skill-jepa-room-to-lava.json
 	uv run --extra train python -m skill_wm.models.skill_jepa --data data/rollouts/minihack-jepa-controlled --epochs 20 --batch-size 16 --split task --eval-env-id skillwm-room-goal --seed 7 --out data/eval/minihack-skill-jepa-lava-to-room.json
+
+minihack-jepa-coverage-data:
+	rm -rf data/rollouts/minihack-jepa-coverage
+	uv run --extra minihack python -m skill_wm.data.collect_minihack --env-id skillwm-room-goal --episodes 32 --max-steps 40 --policy scripted_nav_noisy --seed-start 3000 --out data/rollouts/minihack-jepa-coverage/room-goal-noisy
+	uv run --extra minihack python -m skill_wm.data.collect_minihack --env-id skillwm-lava-detour --episodes 8 --max-steps 50 --policy scripted_nav --seed-start 1000 --out data/rollouts/minihack-jepa-coverage/lava-detour
+
+skill-jepa-coverage-eval: minihack-jepa-coverage-data
+	uv run --extra train python -m skill_wm.models.skill_jepa --data data/rollouts/minihack-jepa-coverage --epochs 20 --batch-size 16 --split task --eval-env-id skillwm-lava-detour --seed 7 --out data/eval/minihack-skill-jepa-room-noisy-to-lava.json
+
+minihack-jepa-hazard-data:
+	rm -rf data/rollouts/minihack-jepa-hazard
+	uv run --extra minihack python -m skill_wm.data.collect_minihack --env-id skillwm-room-goal --episodes 32 --max-steps 40 --policy scripted_nav_noisy --seed-start 3000 --out data/rollouts/minihack-jepa-hazard/room-goal-noisy
+	uv run --extra minihack python -m skill_wm.data.collect_minihack --env-id skillwm-lava-detour --episodes 8 --max-steps 50 --policy lava_probe --seed-start 1000 --out data/rollouts/minihack-jepa-hazard/lava-probe
+
+skill-jepa-hazard-eval: minihack-jepa-hazard-data
+	uv run --extra train python -m skill_wm.models.skill_jepa --data data/rollouts/minihack-jepa-hazard --epochs 20 --batch-size 16 --split task --eval-env-id skillwm-lava-detour --seed 7 --out data/eval/minihack-skill-jepa-room-noisy-to-lava-probe.json
 
 collect-small:
 	uv run python -m skill_wm.data.collect --episodes 50 --max-steps 200 --policy biased_random --out data/rollouts/small

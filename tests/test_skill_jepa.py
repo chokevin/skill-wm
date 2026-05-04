@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,7 @@ from skill_wm.models.skill_jepa import (
     MiniHackJEPAVocab,
     MiniHackSkillJEPA,
     SkillJEPAConfig,
+    coverage_summary,
     load_minihack_jepa_shard,
     split_rows_by_env,
     split_rows_by_seed,
@@ -27,6 +29,8 @@ def _row(i: int, action_name: str = "east", env_id: str = "skillwm-room-goal") -
         step=i,
         action=0,
         action_name=action_name,
+        logical_pos_before=(1, 2),
+        logical_pos_after=(2, 2),
         glyph_before=before,
         glyph_after=after,
         blstats_before=np.arange(27, dtype=np.int32),
@@ -62,6 +66,8 @@ def test_load_minihack_jepa_shard(tmp_path: Path) -> None:
         step=np.array([row.step], dtype=np.int32),
         action=np.array([row.action], dtype=np.int32),
         action_name=np.array([row.action_name]),
+        logical_pos_before=np.array([row.logical_pos_before], dtype=np.int32),
+        logical_pos_after=np.array([row.logical_pos_after], dtype=np.int32),
         glyph_crop_before=np.stack([row.glyph_before]),
         glyph_crop_after=np.stack([row.glyph_after]),
         blstats_before=np.stack([row.blstats_before]),
@@ -79,6 +85,7 @@ def test_load_minihack_jepa_shard(tmp_path: Path) -> None:
     assert len(rows) == 1
     assert rows[0].env_id == "skillwm-room-goal"
     assert rows[0].action_name == "east"
+    assert rows[0].logical_pos_before == (1, 2)
     assert rows[0].glyph_before.shape == (15, 15)
     assert rows[0].inventory_before == "a key|an apple"
 
@@ -124,6 +131,7 @@ def test_train_eval_summary_is_json_ready() -> None:
     assert summary["rows"] == len(rows)
     assert summary["train"]["rows"] > 0
     assert summary["eval"]["rows"] > 0
+    assert summary["coverage"]["train"]["action_oov_rate"] == 0.0
     assert np.isfinite(summary["final_loss"])
 
 
@@ -145,3 +153,28 @@ def test_train_eval_summary_supports_task_split() -> None:
     assert summary["split"]["mode"] == "task"
     assert summary["split"]["train_env_ids"] == ["skillwm-room-goal"]
     assert summary["split"]["eval_env_ids"] == ["skillwm-lava-detour"]
+
+
+def test_coverage_summary_explains_action_and_glyph_shift() -> None:
+    train = [_row(i, action_name="east", env_id="skillwm-room-goal") for i in range(4)]
+    evalu = [_row(20, action_name="north", env_id="skillwm-lava-detour")]
+    evalu[0].glyph_after[:, :] = 9999
+    vocab = MiniHackJEPAVocab.from_rows(train)
+    coverage = coverage_summary(evalu, vocab, np.array([3.0]))
+    assert coverage["action_oov_names"] == ["north"]
+    assert coverage["action_oov_rate"] == 1.0
+    assert coverage["glyph_after_oov_rate"] == 1.0
+    assert coverage["action_oov_surprise"] == 3.0
+
+
+def test_coverage_summary_identifies_lava_probe_transition() -> None:
+    train = [_row(i, action_name="east", env_id="skillwm-room-goal") for i in range(4)]
+    evalu = [
+        _row(20, action_name="east", env_id="skillwm-lava-detour"),
+        _row(21, action_name="north", env_id="skillwm-lava-detour"),
+    ]
+    evalu[0] = replace(evalu[0], logical_pos_before=(3, 2), logical_pos_after=(3, 2))
+    vocab = MiniHackJEPAVocab.from_rows(train)
+    coverage = coverage_summary(evalu, vocab, np.array([5.0, 1.0]))
+    assert coverage["lava_probe_rate"] == 0.5
+    assert coverage["lava_probe_surprise"] == 5.0

@@ -33,6 +33,8 @@ class MiniHackJEPARow:
     step: int
     action: int
     action_name: str
+    logical_pos_before: tuple[int, int]
+    logical_pos_after: tuple[int, int]
     glyph_before: np.ndarray
     glyph_after: np.ndarray
     blstats_before: np.ndarray
@@ -106,6 +108,16 @@ def load_minihack_jepa_shard(path: Path) -> list[MiniHackJEPARow]:
     f = np.load(path, allow_pickle=True)
     n = int(f["action"].shape[0])
     env_ids = f["env_id"] if "env_id" in f.files else np.array([_infer_env_id(path)] * n)
+    logical_pos_before = (
+        f["logical_pos_before"]
+        if "logical_pos_before" in f.files
+        else np.zeros((n, 2), dtype=np.int32)
+    )
+    logical_pos_after = (
+        f["logical_pos_after"]
+        if "logical_pos_after" in f.files
+        else np.zeros((n, 2), dtype=np.int32)
+    )
     rows: list[MiniHackJEPARow] = []
     for i in range(n):
         rows.append(
@@ -116,6 +128,8 @@ def load_minihack_jepa_shard(path: Path) -> list[MiniHackJEPARow]:
                 step=int(f["step"][i]),
                 action=int(f["action"][i]),
                 action_name=str(f["action_name"][i]),
+                logical_pos_before=tuple(int(x) for x in logical_pos_before[i]),
+                logical_pos_after=tuple(int(x) for x in logical_pos_after[i]),
                 glyph_before=np.asarray(f["glyph_crop_before"][i]),
                 glyph_after=np.asarray(f["glyph_crop_after"][i]),
                 blstats_before=np.asarray(f["blstats_before"][i]),
@@ -389,6 +403,94 @@ def summarize_surprise(rows: list[MiniHackJEPARow], surprise: np.ndarray) -> dic
     return out
 
 
+def coverage_summary(
+    rows: list[MiniHackJEPARow],
+    vocab: MiniHackJEPAVocab,
+    surprise: np.ndarray | None = None,
+) -> dict[str, object]:
+    """Summarize train-vocab coverage for explaining task-shift surprise."""
+
+    if not rows:
+        return {
+            "rows": 0,
+            "action_oov_rate": float("nan"),
+            "glyph_before_oov_rate": float("nan"),
+            "glyph_after_oov_rate": float("nan"),
+        }
+
+    train_glyphs = set(vocab.glyph_to_idx)
+    action_oov = np.array([r.action_name not in vocab.action_to_idx for r in rows], dtype=bool)
+    lava_message = np.array(
+        ["lava" in f"{r.message_before} {r.message_after}".lower() for r in rows],
+        dtype=bool,
+    )
+    lava_probe = np.array(
+        [
+            r.env_id == "skillwm-lava-detour"
+            and r.logical_pos_before == (3, 2)
+            and r.action_name == "east"
+            for r in rows
+        ],
+        dtype=bool,
+    )
+    glyph_before_oov: list[bool] = []
+    glyph_after_oov: list[bool] = []
+    glyph_before_unknown = 0
+    glyph_after_unknown = 0
+    glyph_before_total = 0
+    glyph_after_total = 0
+    unknown_glyphs: set[int] = set()
+    for row in rows:
+        before_values = np.asarray(row.glyph_before).ravel()
+        after_values = np.asarray(row.glyph_after).ravel()
+        before_unknown = [int(x) for x in before_values if int(x) not in train_glyphs]
+        after_unknown = [int(x) for x in after_values if int(x) not in train_glyphs]
+        unknown_glyphs.update(before_unknown)
+        unknown_glyphs.update(after_unknown)
+        glyph_before_unknown += len(before_unknown)
+        glyph_after_unknown += len(after_unknown)
+        glyph_before_total += int(before_values.shape[0])
+        glyph_after_total += int(after_values.shape[0])
+        glyph_before_oov.append(bool(before_unknown))
+        glyph_after_oov.append(bool(after_unknown))
+
+    glyph_transition_oov = np.array(
+        [before or after for before, after in zip(glyph_before_oov, glyph_after_oov, strict=True)],
+        dtype=bool,
+    )
+    out: dict[str, object] = {
+        "rows": len(rows),
+        "env_ids": sorted({r.env_id for r in rows}),
+        "action_names": sorted({r.action_name for r in rows}),
+        "action_oov_names": sorted(
+            {r.action_name for r in rows if r.action_name not in vocab.action_to_idx}
+        ),
+        "action_oov_rate": float(action_oov.mean()),
+        "done_rate": float(np.mean([r.done for r in rows])),
+        "mean_reward": float(np.mean([r.reward for r in rows])),
+        "lava_message_rate": float(lava_message.mean()),
+        "lava_probe_rate": float(lava_probe.mean()),
+        "glyph_oov_values": sorted(unknown_glyphs),
+        "glyph_before_oov_rate": float(glyph_before_unknown / max(glyph_before_total, 1)),
+        "glyph_after_oov_rate": float(glyph_after_unknown / max(glyph_after_total, 1)),
+        "glyph_transition_oov_rate": float(glyph_transition_oov.mean()),
+    }
+    if surprise is not None and len(surprise):
+        if action_oov.any():
+            out["action_oov_surprise"] = float(np.mean(surprise[action_oov]))
+        if (~action_oov).any():
+            out["action_known_surprise"] = float(np.mean(surprise[~action_oov]))
+        if glyph_transition_oov.any():
+            out["glyph_oov_surprise"] = float(np.mean(surprise[glyph_transition_oov]))
+        if (~glyph_transition_oov).any():
+            out["glyph_known_surprise"] = float(np.mean(surprise[~glyph_transition_oov]))
+        if lava_message.any():
+            out["lava_message_surprise"] = float(np.mean(surprise[lava_message]))
+        if lava_probe.any():
+            out["lava_probe_surprise"] = float(np.mean(surprise[lava_probe]))
+    return out
+
+
 def train_eval_summary(
     rows: list[MiniHackJEPARow],
     config: SkillJEPAConfig,
@@ -428,6 +530,11 @@ def train_eval_summary(
         "vocab": {
             "glyph_vocab_size": vocab.glyph_vocab_size,
             "action_vocab_size": vocab.action_vocab_size,
+            "action_names": sorted(vocab.action_to_idx),
+        },
+        "coverage": {
+            "train": coverage_summary(train, vocab, train_scores),
+            "eval": coverage_summary(evalu, vocab, eval_scores),
         },
         "config": asdict(config),
         "final_loss": model.history[-1]["loss"],
@@ -453,6 +560,7 @@ def _print_summary(summary: dict[str, object]) -> None:
     print(f"  final loss: {float(summary['final_loss']):.6f}")
     print("  train surprise:", train)
     print("  eval surprise:", evalu)
+    print("  eval coverage:", summary["coverage"]["eval"])
 
 
 def main() -> None:

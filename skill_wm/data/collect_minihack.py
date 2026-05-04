@@ -46,9 +46,63 @@ def scripted_nav_policy(
         return random_policy(rng, num_actions, info)
 
 
+def scripted_nav_noisy_policy(
+    rng: np.random.Generator, num_actions: int, info: dict[str, Any] | None = None
+) -> int:
+    """Mostly follow the known path, with random actions for action-coverage probes."""
+
+    if rng.random() < 0.25:
+        return random_policy(rng, num_actions, info)
+    return scripted_nav_policy(rng, num_actions, info)
+
+
+def lava_probe_policy(
+    rng: np.random.Generator, num_actions: int, info: dict[str, Any] | None = None
+) -> int:
+    """Navigate to the lava column and try one unsafe east step before recovering."""
+
+    if (
+        not info
+        or info.get("env_id") != "skillwm-lava-detour"
+        or "obs" not in info
+        or "action_names" not in info
+    ):
+        return scripted_nav_policy(rng, num_actions, info)
+
+    memory = info.get("policy_memory")
+    if not isinstance(memory, dict):
+        memory = {}
+    blstats = np.asarray(info["obs"]["blstats"])
+    coord_offset = tuple(int(x) for x in info.get("coord_offset", (0, 0)))
+    logical_pos = (int(blstats[0]) - coord_offset[0], int(blstats[1]) - coord_offset[1])
+    if logical_pos == (3, 2) and not memory.get("lava_probe_done"):
+        memory["lava_probe_done"] = True
+        try:
+            return tuple(str(x) for x in info["action_names"]).index("east")
+        except ValueError:
+            return random_policy(rng, num_actions, info)
+    if not memory.get("lava_probe_done"):
+        target = (3, 2)
+        if logical_pos[0] < target[0]:
+            action_name = "east"
+        elif logical_pos[0] > target[0]:
+            action_name = "west"
+        elif logical_pos[1] < target[1]:
+            action_name = "south"
+        else:
+            action_name = "north"
+        try:
+            return tuple(str(x) for x in info["action_names"]).index(action_name)
+        except ValueError:
+            return random_policy(rng, num_actions, info)
+    return scripted_nav_policy(rng, num_actions, info)
+
+
 POLICIES: dict[str, Callable[[np.random.Generator, int, dict[str, Any] | None], int]] = {
     "random": random_policy,
     "scripted_nav": scripted_nav_policy,
+    "scripted_nav_noisy": scripted_nav_noisy_policy,
+    "lava_probe": lava_probe_policy,
 }
 
 
@@ -58,6 +112,7 @@ def _policy_context(
     env_id: str,
     action_names: tuple[str, ...],
     coord_offset: tuple[int, int] | None = None,
+    policy_memory: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     context = dict(info)
     context["obs"] = obs
@@ -65,6 +120,8 @@ def _policy_context(
     context["action_names"] = action_names
     if coord_offset is not None:
         context["coord_offset"] = coord_offset
+    if policy_memory is not None:
+        context["policy_memory"] = policy_memory
     return context
 
 
@@ -75,6 +132,21 @@ def minihack_transitions_to_npz(
 
     if not transitions:
         return {}
+
+    spec = get_minihack_task_spec(env_id or "")
+    coord_offset = None
+    if spec is not None:
+        first_blstats = np.asarray(transitions[0].state_before.blstats)
+        coord_offset = (
+            int(first_blstats[0]) - spec.start_pos[0],
+            int(first_blstats[1]) - spec.start_pos[1],
+        )
+
+    def logical_pos(blstats: np.ndarray) -> tuple[int, int]:
+        arr = np.asarray(blstats)
+        if arr.shape[0] < 2 or coord_offset is None:
+            return (0, 0)
+        return (int(arr[0]) - coord_offset[0], int(arr[1]) - coord_offset[1])
 
     return {
         "episode": np.array([t.episode for t in transitions], dtype=np.int32),
@@ -91,6 +163,12 @@ def minihack_transitions_to_npz(
         ),
         "player_pos_after": np.array(
             [t.state_after.player_pos for t in transitions], dtype=np.int32
+        ),
+        "logical_pos_before": np.array(
+            [logical_pos(t.state_before.blstats) for t in transitions], dtype=np.int32
+        ),
+        "logical_pos_after": np.array(
+            [logical_pos(t.state_after.blstats) for t in transitions], dtype=np.int32
         ),
         "glyph_crop_before": np.stack([t.state_before.glyph_crop for t in transitions]),
         "glyph_crop_after": np.stack([t.state_after.glyph_crop for t in transitions]),
@@ -133,13 +211,18 @@ def collect(
                 int(blstats[0]) - spec.start_pos[0],
                 int(blstats[1]) - spec.start_pos[1],
             )
-        policy_info = _policy_context(info, obs, env_id, env.action_names, coord_offset)
+        policy_memory: dict[str, Any] = {}
+        policy_info = _policy_context(
+            info, obs, env_id, env.action_names, coord_offset, policy_memory
+        )
         transitions: list[MiniHackTransition] = []
 
         for _ in range(max_steps_per_episode):
             action = policy(rng, env.num_actions, policy_info)
             transition, obs, info, done = env.step(action)
-            policy_info = _policy_context(info, obs, env_id, env.action_names, coord_offset)
+            policy_info = _policy_context(
+                info, obs, env_id, env.action_names, coord_offset, policy_memory
+            )
             transitions.append(transition)
             total_transitions += 1
             total_successes += int(transition.success)

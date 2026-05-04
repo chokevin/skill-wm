@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from skill_wm.data.collect_minihack import minihack_transitions_to_npz, scripted_nav_policy
+from skill_wm.data.collect_minihack import (
+    lava_probe_policy,
+    minihack_transitions_to_npz,
+    scripted_nav_noisy_policy,
+    scripted_nav_policy,
+)
 from skill_wm.envs.minihack_env import (
     MiniHackWrapper,
     crop_grid,
@@ -102,9 +107,12 @@ def test_minihack_npz_writer_preserves_core_fields():
     )
     wrapper.reset(episode=0)
     transition, *_ = wrapper.step(1)
-    data = minihack_transitions_to_npz([transition])
+    data = minihack_transitions_to_npz([transition], env_id="skillwm-room-goal")
 
     assert data["action_name"].tolist() == ["open"]
+    assert data["env_id"].tolist() == ["skillwm-room-goal"]
+    assert data["logical_pos_before"].tolist() == [[1, 2]]
+    assert data["logical_pos_after"].tolist() == [[2, 2]]
     assert data["success"].tolist() == [True]
     assert data["glyph_crop_before"].shape == (1, 3, 3)
     assert data["message_after"].tolist() == ["opened"]
@@ -143,3 +151,34 @@ def test_scripted_nav_policy_uses_task_shortest_path():
     }
     action = scripted_nav_policy(np.random.default_rng(0), len(spec.action_names), info)
     assert spec.action_names[action] == "east"
+
+
+def test_noisy_scripted_nav_still_returns_valid_action():
+    spec = get_minihack_task_spec("skillwm-room-goal")
+    assert spec is not None
+    info = {
+        "env_id": spec.env_id,
+        "action_names": spec.action_names,
+        "coord_offset": (34, 9),
+        "obs": {"blstats": np.array([35, 11, 0], dtype=np.int32)},
+    }
+    action = scripted_nav_noisy_policy(np.random.default_rng(0), len(spec.action_names), info)
+    assert 0 <= action < len(spec.action_names)
+
+
+def test_lava_probe_policy_takes_one_unsafe_probe_then_recovers():
+    spec = get_minihack_task_spec("skillwm-lava-detour")
+    assert spec is not None
+    memory: dict[str, bool] = {}
+    info = {
+        "env_id": spec.env_id,
+        "action_names": spec.action_names,
+        "coord_offset": (34, 9),
+        "policy_memory": memory,
+        "obs": {"blstats": np.array([37, 11, 0], dtype=np.int32)},
+    }
+    first = lava_probe_policy(np.random.default_rng(0), len(spec.action_names), info)
+    second = lava_probe_policy(np.random.default_rng(0), len(spec.action_names), info)
+    assert spec.action_names[first] == "east"
+    assert memory["lava_probe_done"] is True
+    assert spec.action_names[second] != "east"
