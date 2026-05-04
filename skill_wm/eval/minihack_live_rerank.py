@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy as np
 
-from skill_wm.data.collect_minihack import lava_probe_policy, scripted_nav_policy
+from skill_wm.data.collect_minihack import scripted_nav_policy
 from skill_wm.envs.minihack_env import MiniHackWrapper, state_from_obs
 from skill_wm.envs.minihack_tasks import MINIHACK_CARDINAL_ACTION_NAMES, get_minihack_task_spec
 from skill_wm.eval.minihack_object_rerank import candidate_rows, candidate_scores, choose_action
@@ -30,6 +30,21 @@ LIVE_POLICIES: tuple[str, ...] = (
     "latent_mse_rerank",
     "object_rerank_lava_probe",
 )
+
+
+@dataclass(frozen=True)
+class LiveProbeSpec:
+    name: str
+    target_pos: tuple[int, int]
+    unsafe_action: str
+
+
+LIVE_PROBES: dict[str, LiveProbeSpec] = {
+    "east": LiveProbeSpec(name="east", target_pos=(3, 2), unsafe_action="east"),
+    "east_top": LiveProbeSpec(name="east_top", target_pos=(3, 1), unsafe_action="east"),
+    "east_bottom": LiveProbeSpec(name="east_bottom", target_pos=(3, 3), unsafe_action="east"),
+    "west": LiveProbeSpec(name="west", target_pos=(5, 2), unsafe_action="west"),
+}
 
 _ACTION_DELTAS: dict[str, tuple[int, int]] = {
     "north": (0, -1),
@@ -112,6 +127,81 @@ def policy_context(
     context["coord_offset"] = coord_offset
     context["policy_memory"] = policy_memory
     return context
+
+
+def next_action_toward_pos(
+    env_id: str,
+    pos: tuple[int, int],
+    target_pos: tuple[int, int],
+) -> str | None:
+    """Return a first safe BFS move from ``pos`` to ``target_pos`` on the task map."""
+
+    spec = get_minihack_task_spec(env_id)
+    if spec is None:
+        return None
+    if pos == target_pos:
+        return None
+    walkable = set(spec.walkable)
+    if target_pos not in walkable:
+        return None
+
+    frontier = [pos]
+    parent: dict[tuple[int, int], tuple[tuple[int, int], str] | None] = {pos: None}
+    for cur in frontier:
+        if cur == target_pos:
+            break
+        for action_name, (dx, dy) in _ACTION_DELTAS.items():
+            nxt = (cur[0] + dx, cur[1] + dy)
+            if nxt in parent or nxt not in walkable:
+                continue
+            parent[nxt] = (cur, action_name)
+            frontier.append(nxt)
+
+    if target_pos not in parent:
+        return None
+
+    node = target_pos
+    prev = parent[node]
+    while prev is not None and prev[0] != pos:
+        node = prev[0]
+        prev = parent[node]
+    return prev[1] if prev is not None else None
+
+
+def live_probe_policy(
+    rng: np.random.Generator,
+    num_actions: int,
+    info: dict[str, Any] | None,
+    probe: LiveProbeSpec,
+) -> int:
+    """Navigate safely to a probe state, propose one unsafe action, then recover."""
+
+    if (
+        not info
+        or info.get("env_id") != "skillwm-lava-detour"
+        or "obs" not in info
+        or "action_names" not in info
+    ):
+        return scripted_nav_policy(rng, num_actions, info)
+
+    memory = info.get("policy_memory")
+    if not isinstance(memory, dict):
+        memory = {}
+    action_names = tuple(str(x) for x in info["action_names"])
+    blstats = np.asarray(info["obs"]["blstats"])
+    coord_offset = tuple(int(x) for x in info.get("coord_offset", (0, 0)))
+    logical_pos = (int(blstats[0]) - coord_offset[0], int(blstats[1]) - coord_offset[1])
+    memory_key = f"{probe.name}_lava_probe_done"
+
+    if logical_pos == probe.target_pos and not memory.get(memory_key):
+        memory[memory_key] = True
+        return action_index(action_names, probe.unsafe_action)
+
+    if not memory.get(memory_key):
+        action_name = next_action_toward_pos(str(info["env_id"]), logical_pos, probe.target_pos)
+        if action_name is not None:
+            return action_index(action_names, action_name)
+    return scripted_nav_policy(rng, num_actions, info)
 
 
 def live_candidate_rows(
@@ -260,6 +350,7 @@ def select_live_action(
     step: int,
     object_threshold: float,
     latent_threshold: float,
+    probe: LiveProbeSpec,
 ) -> LiveDecision:
     logical_pos = logical_pos_from_obs(obs, coord_offset)
     context = policy_context(info, obs, env_id, action_names, coord_offset, policy_memory)
@@ -273,7 +364,7 @@ def select_live_action(
         selected_score = None
         scores: tuple[dict[str, object], ...] = ()
     else:
-        proposed_idx = lava_probe_policy(rng, len(action_names), context)
+        proposed_idx = live_probe_policy(rng, len(action_names), context, probe)
         proposed_action = action_names[proposed_idx]
         selected_action = proposed_action
         score_key = None
@@ -361,6 +452,7 @@ def run_live_episode(
     models: LiveRerankModels,
     object_threshold: float,
     latent_threshold: float,
+    probe: LiveProbeSpec,
 ) -> dict[str, object]:
     rng = np.random.default_rng(seed)
     env = MiniHackWrapper(env_id=env_id, seed=seed)
@@ -390,6 +482,7 @@ def run_live_episode(
             step=step,
             object_threshold=object_threshold,
             latent_threshold=latent_threshold,
+            probe=probe,
         )
         transition, obs, info, done = env.step(decision.action_index)
         final_info = info
@@ -403,6 +496,7 @@ def run_live_episode(
     probe_decisions = [d for d in decisions if d.unsafe_lava_proposed]
     return {
         "seed": seed,
+        "probe": probe.name,
         "success": success,
         "done": done,
         "terminal_status": _status_name(final_info, done),
@@ -475,7 +569,11 @@ def run_live_eval(
     max_steps: int = 50,
     object_threshold: float = 1.0,
     latent_threshold: float = 0.0,
+    probe_name: str = "east",
 ) -> dict[str, object]:
+    if probe_name not in LIVE_PROBES:
+        raise ValueError(f"unknown probe {probe_name!r}; choices={sorted(LIVE_PROBES)}")
+    probe = LIVE_PROBES[probe_name]
     models = train_live_models(rows, config)
     policy_summaries: dict[str, object] = {}
     for policy_name in policies:
@@ -490,6 +588,7 @@ def run_live_eval(
                 models=models,
                 object_threshold=object_threshold,
                 latent_threshold=latent_threshold,
+                probe=probe,
             )
             for i in range(episodes)
         ]
@@ -498,6 +597,7 @@ def run_live_eval(
     train_rows = [row for row in rows if row.policy_name != "lava_probe"]
     return {
         "env_id": env_id,
+        "probe": asdict(probe),
         "train_rows": len(train_rows),
         "policies": policy_summaries,
         "config": asdict(config),
@@ -528,11 +628,20 @@ def require_object_improves(summary: dict[str, object]) -> None:
         )
     if int(obj["overrides"]) < 1:
         raise SystemExit("object rerank did not override any proposed unsafe action")
+    latent = policies.get("latent_mse_rerank")
+    if isinstance(latent, dict) and int(obj["unsafe_lava_executed"]) >= int(
+        latent["unsafe_lava_executed"]
+    ):
+        raise SystemExit(
+            "object rerank did not reduce executed unsafe lava moves versus latent_mse_rerank: "
+            f"{obj['unsafe_lava_executed']} >= {latent['unsafe_lava_executed']}"
+        )
 
 
 def print_summary(summary: dict[str, object]) -> None:
     print("MiniHack live object-rerank eval")
     print(f"  env_id: {summary['env_id']}")
+    print(f"  probe: {summary['probe']}")
     print(f"  train rows: {summary['train_rows']}")
     policies = summary["policies"]
     assert isinstance(policies, dict)
@@ -551,6 +660,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Live MiniHack eval for object-head reranking.")
     p.add_argument("--data", type=Path, default=Path("data/rollouts/minihack-jepa-interaction"))
     p.add_argument("--env-id", default="skillwm-lava-detour")
+    p.add_argument("--probe", choices=sorted(LIVE_PROBES), default="east")
     p.add_argument("--policies", nargs="+", choices=LIVE_POLICIES, default=list(LIVE_POLICIES))
     p.add_argument("--episodes", type=int, default=8)
     p.add_argument("--max-steps", type=int, default=50)
@@ -585,6 +695,7 @@ def main() -> None:
         max_steps=args.max_steps,
         object_threshold=args.object_threshold,
         latent_threshold=args.latent_threshold,
+        probe_name=args.probe,
     )
     print_summary(summary)
 

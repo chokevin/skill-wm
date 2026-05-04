@@ -6,8 +6,11 @@ import numpy as np
 
 from skill_wm.envs.minihack_tasks import MINIHACK_CARDINAL_ACTION_NAMES
 from skill_wm.eval.minihack_live_rerank import (
+    LIVE_PROBES,
     is_unsafe_lava_action,
     live_candidate_rows,
+    live_probe_policy,
+    next_action_toward_pos,
     oracle_object_shield_action,
     proposed_object_signature_known,
     require_object_improves,
@@ -72,6 +75,66 @@ def test_oracle_object_shield_blocks_lava_target() -> None:
     )
 
 
+def test_next_action_toward_west_probe_avoids_lava_column() -> None:
+    assert next_action_toward_pos("skillwm-lava-detour", (3, 2), (5, 2)) != "east"
+
+
+def test_live_probe_policy_supports_top_east_probe() -> None:
+    memory: dict[str, bool] = {}
+    info = {
+        "env_id": "skillwm-lava-detour",
+        "action_names": MINIHACK_CARDINAL_ACTION_NAMES,
+        "coord_offset": (34, 9),
+        "policy_memory": memory,
+        "obs": {"blstats": np.array([37, 10, 0], dtype=np.int32)},
+    }
+
+    first = live_probe_policy(
+        np.random.default_rng(0),
+        len(MINIHACK_CARDINAL_ACTION_NAMES),
+        info,
+        LIVE_PROBES["east_top"],
+    )
+    second = live_probe_policy(
+        np.random.default_rng(0),
+        len(MINIHACK_CARDINAL_ACTION_NAMES),
+        info,
+        LIVE_PROBES["east_top"],
+    )
+
+    assert MINIHACK_CARDINAL_ACTION_NAMES[first] == "east"
+    assert memory["east_top_lava_probe_done"] is True
+    assert MINIHACK_CARDINAL_ACTION_NAMES[second] != "east"
+
+
+def test_live_probe_policy_supports_west_side_probe() -> None:
+    memory: dict[str, bool] = {}
+    info = {
+        "env_id": "skillwm-lava-detour",
+        "action_names": MINIHACK_CARDINAL_ACTION_NAMES,
+        "coord_offset": (34, 9),
+        "policy_memory": memory,
+        "obs": {"blstats": np.array([39, 11, 0], dtype=np.int32)},
+    }
+
+    first = live_probe_policy(
+        np.random.default_rng(0),
+        len(MINIHACK_CARDINAL_ACTION_NAMES),
+        info,
+        LIVE_PROBES["west"],
+    )
+    second = live_probe_policy(
+        np.random.default_rng(0),
+        len(MINIHACK_CARDINAL_ACTION_NAMES),
+        info,
+        LIVE_PROBES["west"],
+    )
+
+    assert MINIHACK_CARDINAL_ACTION_NAMES[first] == "west"
+    assert memory["west_lava_probe_done"] is True
+    assert MINIHACK_CARDINAL_ACTION_NAMES[second] != "west"
+
+
 def test_proposed_object_signature_known_uses_training_signatures() -> None:
     model = SimpleNamespace(
         vocab=SimpleNamespace(object_signatures=frozenset({"east|.->.->."}))
@@ -107,6 +170,11 @@ def test_require_object_improves_checks_success_and_unsafe_moves() -> None:
                 "success_rate": 1.0,
                 "unsafe_lava_executed": 0,
                 "overrides": 4,
+            },
+            "latent_mse_rerank": {
+                "success_rate": 0.5,
+                "unsafe_lava_executed": 1,
+                "overrides": 3,
             },
         }
     }

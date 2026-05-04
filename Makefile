@@ -1,4 +1,4 @@
-.PHONY: help install sync test lint fix format check smoke minihack-smoke skill-jepa-smoke minihack-jepa-data skill-jepa-eval skill-jepa-task-eval minihack-jepa-coverage-data skill-jepa-coverage-eval minihack-jepa-hazard-data skill-jepa-hazard-eval minihack-jepa-interaction-data skill-jepa-interaction-eval skill-jepa-cjepa-eval skill-jepa-rerank-eval skill-jepa-live-rerank-eval collect-small collect-full eval-local \
+.PHONY: help install sync test lint fix format check smoke minihack-smoke skill-jepa-smoke minihack-jepa-data skill-jepa-eval skill-jepa-task-eval minihack-jepa-coverage-data skill-jepa-coverage-eval minihack-jepa-hazard-data skill-jepa-hazard-eval minihack-jepa-interaction-data skill-jepa-interaction-eval skill-jepa-cjepa-eval skill-jepa-rerank-eval skill-jepa-live-rerank-eval skill-jepa-live-rerank-two-probe-eval collect-small collect-full eval-local \
         agent-pilot agent-goal-pilot agent-achievement-pilot clean all \
         rune-setup rune-collect-local rune-collect rune-collect-dry rune-train-dry rune-eval-dry
 
@@ -21,6 +21,7 @@ help:
 	@echo "  skill-jepa-cjepa-eval  baseline vs object-aux Skill-JEPA interaction diagnostic"
 	@echo "  skill-jepa-rerank-eval  reject unsafe lava action with object-head reranker"
 	@echo "  skill-jepa-live-rerank-eval  live lava-detour behavior eval with shield baselines"
+	@echo "  skill-jepa-live-rerank-two-probe-eval  live two-position lava-probe rerank gate"
 	@echo "  collect-small 50-episode rollout (~30s)"
 	@echo "  collect-full  500-episode rollout (~5min)"
 	@echo "  eval-local    run baselines on data/rollouts/smoke (no LLM)"
@@ -112,6 +113,10 @@ skill-jepa-rerank-eval: minihack-jepa-interaction-data
 
 skill-jepa-live-rerank-eval: minihack-jepa-interaction-data
 	uv run --extra minihack --extra train python -m skill_wm.eval.minihack_live_rerank --data data/rollouts/minihack-jepa-interaction --epochs 20 --batch-size 16 --seed 7 --object-aux-weight 0.2 --episodes 8 --seed-start 5000 --require-object-improves --out data/eval/minihack-skill-jepa-live-rerank.json
+
+skill-jepa-live-rerank-two-probe-eval: minihack-jepa-interaction-data
+	uv run --extra minihack --extra train python -m skill_wm.eval.minihack_live_rerank --data data/rollouts/minihack-jepa-interaction --probe east --epochs 20 --batch-size 16 --seed 7 --object-aux-weight 0.2 --episodes 8 --seed-start 5000 --require-object-improves --out data/eval/minihack-skill-jepa-live-rerank-east.json
+	uv run --extra minihack --extra train python -m skill_wm.eval.minihack_live_rerank --data data/rollouts/minihack-jepa-interaction --probe east_top --epochs 20 --batch-size 16 --seed 7 --object-aux-weight 0.2 --episodes 8 --seed-start 6000 --require-object-improves --out data/eval/minihack-skill-jepa-live-rerank-east-top.json
 
 collect-small:
 	uv run python -m skill_wm.data.collect --episodes 50 --max-steps 200 --policy biased_random --out data/rollouts/small

@@ -76,6 +76,7 @@ make skill-jepa-interaction-eval # safe-lava to lava-probe interaction diagnosti
 make skill-jepa-cjepa-eval # baseline vs object-aux Skill-JEPA diagnostic
 make skill-jepa-rerank-eval # reject unsafe lava action with object-head reranker
 make skill-jepa-live-rerank-eval # live lava-detour behavior eval with shield baselines
+make skill-jepa-live-rerank-two-probe-eval # live two-position lava-probe rerank gate
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -157,7 +158,14 @@ lava-detour episodes for `scripted_nav`, `lava_probe`, `oracle_object_shield`,
 object-head reranker improves over the unsafe lava-probe policy while reporting
 the shield and latent-only comparator metrics. The latent-only comparator uses
 the same held-out object-signature trigger as the object reranker, but scores
-candidates with latent MSE rather than target-object NLL.
+candidates with latent MSE rather than target-object NLL. Use
+`make skill-jepa-live-rerank-two-probe-eval` to run that same live gate on both
+the original `(3,2) + east` lava probe and a second `(3,1) + east` probe. The
+second probe checks that the object-head signal is not a single saved-state
+artifact, and the gate requires object-head reranking to reduce unsafe lava
+executions versus the latent-MSE comparator. Exploratory west-side probes are
+available through `--probe west`, but the latent-MSE comparator can also solve
+that variant, so it is not the clean paper gate.
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
 CMake first if your platform has to build NLE from source:
