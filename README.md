@@ -182,7 +182,7 @@ the held-out target object from lava (`L`) to water (`}`). MiniHack water is not
 terminal like lava, so this gate is an unsafe-object avoidance diagnostic rather
 than a clean success-rate claim. On the current multi-model-seed gate
 (`model_seeds=[1,2,3,4,5,7,11]`), the unsafe probe executes the water
-interaction in 56/56 episodes, latent-MSE still executes it in 31/56 episodes,
+interaction in 56/56 episodes, latent-MSE still executes it in 27/56 episodes,
 and object-head reranking plus the oracle shield execute it in 0/56 episodes.
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install

@@ -212,6 +212,18 @@ def test_object_signature_marks_lava_target() -> None:
     assert object_signature(row) == "east|.->L->."
 
 
+def test_object_signature_marks_water_target() -> None:
+    row = replace(
+        _row(0, action_name="east", env_id="skillwm-water-detour"),
+        logical_pos_before=(3, 2),
+        logical_pos_after=(3, 2),
+    )
+    vocab = MiniHackJEPAVocab.from_rows([row])
+
+    assert object_signature(row) == "east|.->}->."
+    assert vocab.object_vocab_size >= 8
+
+
 def test_train_eval_summary_supports_policy_split() -> None:
     rows = [
         _row(
