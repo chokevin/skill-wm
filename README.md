@@ -73,6 +73,7 @@ make skill-jepa-task-eval # held-out-task MiniHack Skill-JEPA eval JSONs
 make skill-jepa-coverage-eval # noisy-room to lava coverage diagnostic
 make skill-jepa-hazard-eval # noisy-room to deliberate lava-probe diagnostic
 make skill-jepa-interaction-eval # safe-lava to lava-probe interaction diagnostic
+make skill-jepa-cjepa-eval # baseline vs object-aux Skill-JEPA diagnostic
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -140,7 +141,10 @@ that deliberately attempt one unsafe lava step before recovering. Use
 `make skill-jepa-interaction-eval` for the cleanest object-interaction split:
 train on safe lava-detour trajectories, then hold out the `lava_probe` policy in
 the same task. That keeps actions and lava glyphs in-distribution while making
-the unsafe `east|.->L->.` object signature out-of-distribution.
+the unsafe `east|.->L->.` object signature out-of-distribution. Use
+`make skill-jepa-cjepa-eval` to compare the baseline latent predictor against an
+object-auxiliary variant (`--object-aux-weight`) that learns target/after tile
+heads alongside the latent prediction objective.
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
 CMake first if your platform has to build NLE from source:
