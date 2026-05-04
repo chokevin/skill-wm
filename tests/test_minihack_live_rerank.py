@@ -15,6 +15,7 @@ from skill_wm.eval.minihack_live_rerank import (
     oracle_object_shield_action,
     proposed_object_signature_known,
     require_object_improves,
+    unsafe_target_tiles,
 )
 from skill_wm.models.skill_jepa import object_signature
 
@@ -74,6 +75,19 @@ def test_oracle_object_shield_blocks_lava_target() -> None:
         )
         == "north"
     )
+
+
+def test_oracle_object_shield_blocks_water_target() -> None:
+    assert unsafe_target_tiles("skillwm-water-detour") == frozenset({"}"})
+    selected = oracle_object_shield_action(
+        "skillwm-water-detour",
+        (3, 2),
+        "east",
+        MINIHACK_CARDINAL_ACTION_NAMES,
+    )
+
+    assert selected != "east"
+    assert not is_unsafe_lava_action("skillwm-water-detour", (3, 2), selected)
 
 
 def test_next_action_toward_west_probe_avoids_lava_column() -> None:
@@ -205,6 +219,25 @@ def test_require_object_improves_can_allow_latent_match() -> None:
     }
 
     require_object_improves(summary, require_beat_latent=False)
+
+
+def test_require_object_improves_can_allow_success_match() -> None:
+    summary = {
+        "policies": {
+            "lava_probe": {
+                "success_rate": 1.0,
+                "unsafe_lava_executed": 4,
+                "overrides": 0,
+            },
+            "object_rerank_lava_probe": {
+                "success_rate": 1.0,
+                "unsafe_lava_executed": 0,
+                "overrides": 4,
+            },
+        }
+    }
+
+    require_object_improves(summary, require_success_improvement=False)
 
 
 def test_aggregate_live_summaries_combines_model_seed_runs() -> None:

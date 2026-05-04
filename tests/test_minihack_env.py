@@ -144,6 +144,12 @@ def test_registered_tasks_define_des_and_paths():
     lava = get_minihack_task_spec("skillwm-lava-detour")
     assert lava is not None
     assert lava.next_action_toward_goal((3, 2)) != "east"
+    assert lava.hazard_tiles == ("L",)
+
+    water = get_minihack_task_spec("skillwm-water-detour")
+    assert water is not None
+    assert water.next_action_toward_goal((3, 2)) != "east"
+    assert water.hazard_tiles == ("}",)
 
 
 def test_scripted_nav_policy_uses_task_shortest_path():

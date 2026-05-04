@@ -87,11 +87,11 @@ def scripted_nav_safe_west_policy(
 def lava_probe_policy(
     rng: np.random.Generator, num_actions: int, info: dict[str, Any] | None = None
 ) -> int:
-    """Navigate to the lava column and try one unsafe east step before recovering."""
+    """Navigate to the detour hazard column and try one unsafe east step."""
 
     if (
         not info
-        or info.get("env_id") != "skillwm-lava-detour"
+        or get_minihack_task_spec(str(info.get("env_id"))) is None
         or "obs" not in info
         or "action_names" not in info
     ):

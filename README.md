@@ -78,6 +78,7 @@ make skill-jepa-rerank-eval # reject unsafe lava action with object-head reranke
 make skill-jepa-live-rerank-eval # live lava-detour behavior eval with shield baselines
 make skill-jepa-live-rerank-two-probe-eval # live two-position lava-probe rerank gate
 make skill-jepa-live-rerank-west-coverage-eval # live west probe with safe-west action coverage
+make skill-jepa-live-rerank-water-eval # live non-lava water hazard probe
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -175,6 +176,14 @@ this controls the `west` action-coverage confound and reports whether the
 object-head signal still blocks `west -> lava`. In the current controlled seeds,
 both object-head reranking and latent-MSE reranking solve that covered-west
 variant, so it is robustness evidence rather than the headline differentiator.
+Use `make skill-jepa-live-rerank-water-eval` for a non-lava hazard probe on
+`skillwm-water-detour`; it keeps the same controlled detour geometry but changes
+the held-out target object from lava (`L`) to water (`}`). MiniHack water is not
+terminal like lava, so this gate is an unsafe-object avoidance diagnostic rather
+than a clean success-rate claim. On the current multi-model-seed gate
+(`model_seeds=[1,2,3,4,5,7,11]`), the unsafe probe executes the water
+interaction in 56/56 episodes, latent-MSE still executes it in 31/56 episodes,
+and object-head reranking plus the oracle shield execute it in 0/56 episodes.
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
 CMake first if your platform has to build NLE from source:
