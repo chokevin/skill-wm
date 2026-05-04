@@ -11,6 +11,7 @@ import numpy as np
 from tqdm import tqdm
 
 from skill_wm.envs.minihack_env import MiniHackTransition, MiniHackWrapper
+from skill_wm.envs.minihack_tasks import get_minihack_task_spec
 
 
 def random_policy(
@@ -19,9 +20,52 @@ def random_policy(
     return int(rng.integers(0, num_actions))
 
 
+def scripted_nav_policy(
+    rng: np.random.Generator, num_actions: int, info: dict[str, Any] | None = None
+) -> int:
+    """Follow the registered task's shortest known path to its goal."""
+
+    if not info or "obs" not in info or "env_id" not in info or "action_names" not in info:
+        return random_policy(rng, num_actions, info)
+
+    spec = get_minihack_task_spec(str(info["env_id"]))
+    if spec is None:
+        return random_policy(rng, num_actions, info)
+
+    blstats = np.asarray(info["obs"]["blstats"])
+    pos = (int(blstats[0]), int(blstats[1]))
+    coord_offset = tuple(int(x) for x in info.get("coord_offset", (0, 0)))
+    action_name = spec.next_action_toward_goal(pos, coord_offset=coord_offset)
+    if action_name is None:
+        return random_policy(rng, num_actions, info)
+
+    action_names = tuple(str(x) for x in info["action_names"])
+    try:
+        return action_names.index(action_name)
+    except ValueError:
+        return random_policy(rng, num_actions, info)
+
+
 POLICIES: dict[str, Callable[[np.random.Generator, int, dict[str, Any] | None], int]] = {
     "random": random_policy,
+    "scripted_nav": scripted_nav_policy,
 }
+
+
+def _policy_context(
+    info: dict[str, Any],
+    obs: dict[str, Any],
+    env_id: str,
+    action_names: tuple[str, ...],
+    coord_offset: tuple[int, int] | None = None,
+) -> dict[str, Any]:
+    context = dict(info)
+    context["obs"] = obs
+    context["env_id"] = env_id
+    context["action_names"] = action_names
+    if coord_offset is not None:
+        context["coord_offset"] = coord_offset
+    return context
 
 
 def minihack_transitions_to_npz(transitions: list[MiniHackTransition]) -> dict[str, np.ndarray]:
@@ -77,12 +121,22 @@ def collect(
     for ep in tqdm(range(num_episodes), desc=f"minihack({env_id},{policy_name})"):
         ep_seed = seed_start + ep
         env = MiniHackWrapper(env_id=env_id, seed=ep_seed)
-        _, info = env.reset(episode=ep)
+        obs, info = env.reset(episode=ep)
+        spec = get_minihack_task_spec(env_id)
+        coord_offset = None
+        if spec is not None:
+            blstats = np.asarray(obs["blstats"])
+            coord_offset = (
+                int(blstats[0]) - spec.start_pos[0],
+                int(blstats[1]) - spec.start_pos[1],
+            )
+        policy_info = _policy_context(info, obs, env_id, env.action_names, coord_offset)
         transitions: list[MiniHackTransition] = []
 
         for _ in range(max_steps_per_episode):
-            action = policy(rng, env.num_actions, info)
-            transition, _, info, done = env.step(action)
+            action = policy(rng, env.num_actions, policy_info)
+            transition, obs, info, done = env.step(action)
+            policy_info = _policy_context(info, obs, env_id, env.action_names, coord_offset)
             transitions.append(transition)
             total_transitions += 1
             total_successes += int(transition.success)
@@ -107,10 +161,10 @@ def collect(
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--out", type=Path, default=Path("data/rollouts/minihack-smoke"))
-    p.add_argument("--env-id", default="MiniHack-Room-5x5-v0")
+    p.add_argument("--env-id", default="skillwm-room-goal")
     p.add_argument("--episodes", type=int, default=2)
     p.add_argument("--max-steps", type=int, default=50)
-    p.add_argument("--policy", choices=list(POLICIES.keys()), default="random")
+    p.add_argument("--policy", choices=list(POLICIES.keys()), default="scripted_nav")
     p.add_argument("--seed-start", type=int, default=0)
     args = p.parse_args()
 

@@ -39,6 +39,7 @@ skill_wm/
     state_text.py         # Crafter state -> ASCII prompt for the LLM
     llm_wm.py             # OpenAI client + logprob-based p(success)
     trained_wm.py         # small CNN+MLP trained on (crop, inv, action) -> p(success)
+    skill_jepa.py         # MiniHack Skill-JEPA prototype: state+skill -> latent outcome
   eval/
     dataset.py            # ScoringRow loader, seed-disjoint split, manifest
     metrics.py            # Brier (headline), ECE (adaptive bins, gated by support)
@@ -66,6 +67,7 @@ make install              # uv sync
 make check                # lint + tests
 make smoke                # 5-episode rollout end-to-end
 make minihack-smoke       # optional MiniHack rollout (installs --extra minihack)
+make skill-jepa-smoke     # collect MiniHack smoke + train tiny Skill-JEPA gate
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -87,7 +89,9 @@ uv run python -m skill_wm.agent.run --train-data data/rollouts/collect-002-combi
 uv run python -m skill_wm.agent.run --train-data data/rollouts/collect-002-combined \
     --policies mixed precondition-rerank-mixed trained-achievement-rerank-mixed
 uv run --extra minihack python -m skill_wm.data.collect_minihack \
-    --env-id MiniHack-Room-5x5-v0 --episodes 2 --max-steps 50
+    --env-id skillwm-lava-detour --episodes 10 --max-steps 50 --policy scripted_nav
+uv run --extra train python -m skill_wm.models.skill_jepa \
+    --data data/rollouts/minihack-smoke --epochs 10 --batch-size 8
 ```
 
 ## Second environment: MiniHack/NLE
@@ -101,6 +105,19 @@ The MiniHack adapter is optional and logs the raw state primitives we need befor
 committing to a shared predictor schema: glyph crop, BLStats, message text,
 inventory strings, action, reward, terminal, and a generic success label
 (`success`/`task_success` from `info`, falling back to `reward > 0`).
+
+The current controlled tasks are:
+
+| Task | Purpose |
+|---|---|
+| `skillwm-room-goal` | Minimal coordinate/staircase success path. |
+| `skillwm-lava-detour` | Same goal with a lava column requiring a route around local hazards. |
+
+The first JEPA-shaped gate is intentionally tiny: `skill_wm.models.skill_jepa`
+trains `state_before + action -> latent(state_after)` on MiniHack transition
+NPZs, with glyph crops, BLStats, messages, and inventory strings in the state
+encoder. It reports prediction error as a surprise score so we can test the
+LeCun-inspired shape before committing to a larger Skill-JEPA benchmark.
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
 CMake first if your platform has to build NLE from source:

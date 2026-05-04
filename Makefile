@@ -1,4 +1,4 @@
-.PHONY: help install sync test lint fix format check smoke minihack-smoke collect-small collect-full eval-local \
+.PHONY: help install sync test lint fix format check smoke minihack-smoke skill-jepa-smoke collect-small collect-full eval-local \
         agent-pilot agent-goal-pilot agent-achievement-pilot clean all \
         rune-setup rune-collect-local rune-collect rune-collect-dry rune-train-dry rune-eval-dry
 
@@ -12,6 +12,7 @@ help:
 	@echo "  check         lint + test (CI-equivalent)"
 	@echo "  smoke         5-episode rollout to verify end-to-end"
 	@echo "  minihack-smoke  optional MiniHack rollout smoke test"
+	@echo "  skill-jepa-smoke  train tiny MiniHack Skill-JEPA on smoke rollouts"
 	@echo "  collect-small 50-episode rollout (~30s)"
 	@echo "  collect-full  500-episode rollout (~5min)"
 	@echo "  eval-local    run baselines on data/rollouts/smoke (no LLM)"
@@ -52,7 +53,11 @@ smoke:
 	uv run python -m skill_wm.data.collect --episodes 5 --max-steps 100 --policy biased_random --out data/rollouts/smoke
 
 minihack-smoke:
-	uv run --extra minihack python -m skill_wm.data.collect_minihack --episodes 2 --max-steps 50 --policy random --out data/rollouts/minihack-smoke
+	uv run --extra minihack python -m skill_wm.data.collect_minihack --env-id skillwm-room-goal --episodes 2 --max-steps 30 --policy scripted_nav --out data/rollouts/minihack-smoke/room-goal
+	uv run --extra minihack python -m skill_wm.data.collect_minihack --env-id skillwm-lava-detour --episodes 2 --max-steps 50 --policy scripted_nav --out data/rollouts/minihack-smoke/lava-detour
+
+skill-jepa-smoke: minihack-smoke
+	uv run --extra train python -m skill_wm.models.skill_jepa --data data/rollouts/minihack-smoke --epochs 10 --batch-size 8
 
 collect-small:
 	uv run python -m skill_wm.data.collect --episodes 50 --max-steps 200 --policy biased_random --out data/rollouts/small
