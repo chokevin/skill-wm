@@ -25,7 +25,7 @@ from skill_wm.envs.minihack_tasks import get_minihack_task_spec
 TEXT_VOCAB_SIZE = 512
 TEXT_TOKENS = 16
 BLSTATS_DIM = 27
-OBJECT_TILES: tuple[str, ...] = (" ", ".", ">", "L", "#", "+", "?")
+OBJECT_TILES: tuple[str, ...] = (" ", ".", ">", "L", "}", "#", "+", "?")
 OBJECT_TILE_TO_IDX: dict[str, int] = {tile: i for i, tile in enumerate(OBJECT_TILES)}
 
 _ACTION_DELTAS: dict[str, tuple[int, int]] = {
