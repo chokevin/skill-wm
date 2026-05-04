@@ -1,4 +1,4 @@
-.PHONY: help install sync test lint fix format check smoke minihack-smoke skill-jepa-smoke minihack-jepa-data skill-jepa-eval skill-jepa-task-eval minihack-jepa-coverage-data skill-jepa-coverage-eval minihack-jepa-hazard-data skill-jepa-hazard-eval minihack-jepa-interaction-data minihack-jepa-west-coverage-data minihack-jepa-water-interaction-data skill-jepa-interaction-eval skill-jepa-cjepa-eval skill-jepa-rerank-eval skill-jepa-live-rerank-eval skill-jepa-live-rerank-two-probe-eval skill-jepa-live-rerank-west-coverage-eval skill-jepa-live-rerank-water-eval collect-small collect-full eval-local \
+.PHONY: help install sync test lint fix format check smoke minihack-smoke skill-jepa-smoke minihack-jepa-data skill-jepa-eval skill-jepa-task-eval minihack-jepa-coverage-data skill-jepa-coverage-eval minihack-jepa-hazard-data skill-jepa-hazard-eval minihack-jepa-interaction-data minihack-jepa-west-coverage-data minihack-jepa-water-interaction-data skill-jepa-interaction-eval skill-jepa-cjepa-eval skill-jepa-rerank-eval skill-jepa-live-rerank-eval skill-jepa-live-rerank-two-probe-eval skill-jepa-live-rerank-west-coverage-eval skill-jepa-live-rerank-water-eval skill-jepa-live-rerank-door-diagnostic collect-small collect-full eval-local \
         agent-pilot agent-goal-pilot agent-achievement-pilot clean all \
         rune-setup rune-collect-local rune-collect rune-collect-dry rune-train-dry rune-eval-dry
 
@@ -25,6 +25,7 @@ help:
 	@echo "  minihack-jepa-west-coverage-data  collect safe-west coverage data for west probe"
 	@echo "  skill-jepa-live-rerank-west-coverage-eval  live west lava probe with west action covered"
 	@echo "  skill-jepa-live-rerank-water-eval  live water-detour hazard probe"
+	@echo "  skill-jepa-live-rerank-door-diagnostic  live required-door overblocking diagnostic"
 	@echo "  collect-small 50-episode rollout (~30s)"
 	@echo "  collect-full  500-episode rollout (~5min)"
 	@echo "  eval-local    run baselines on data/rollouts/smoke (no LLM)"
@@ -137,6 +138,9 @@ skill-jepa-live-rerank-west-coverage-eval: minihack-jepa-west-coverage-data
 
 skill-jepa-live-rerank-water-eval: minihack-jepa-water-interaction-data
 	uv run --extra minihack --extra train python -m skill_wm.eval.minihack_live_rerank --data data/rollouts/minihack-jepa-water-interaction --env-id skillwm-water-detour --probe east --epochs 20 --batch-size 16 --model-seeds 1 2 3 4 5 7 11 --object-aux-weight 0.2 --episodes 8 --seed-start 8200 --require-object-improves --allow-latent-match --allow-success-match --out data/eval/minihack-skill-jepa-live-rerank-water.json
+
+skill-jepa-live-rerank-door-diagnostic: minihack-jepa-interaction-data
+	uv run --extra minihack --extra train python -m skill_wm.eval.minihack_live_rerank --data data/rollouts/minihack-jepa-interaction --env-id skillwm-door-hall --probe door --epochs 20 --batch-size 16 --model-seeds 1 2 3 4 5 7 11 --object-aux-weight 0.2 --episodes 8 --seed-start 9000 --out data/eval/minihack-skill-jepa-live-rerank-door.json
 
 collect-small:
 	uv run python -m skill_wm.data.collect --episodes 50 --max-steps 200 --policy biased_random --out data/rollouts/small

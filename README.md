@@ -79,6 +79,7 @@ make skill-jepa-live-rerank-eval # live lava-detour behavior eval with shield ba
 make skill-jepa-live-rerank-two-probe-eval # live two-position lava-probe rerank gate
 make skill-jepa-live-rerank-west-coverage-eval # live west probe with safe-west action coverage
 make skill-jepa-live-rerank-water-eval # live non-lava water hazard probe
+make skill-jepa-live-rerank-door-diagnostic # required-door overblocking diagnostic
 make eval-local           # run Random/Marginal/Precondition baselines on data/rollouts/smoke
 make eval-llm             # add the LLM-as-WM baseline (needs OPENAI_API_KEY)
 make all                  # install + check + smoke
@@ -184,6 +185,14 @@ than a clean success-rate claim. On the current multi-model-seed gate
 (`model_seeds=[1,2,3,4,5,7,11]`), the unsafe probe executes the water
 interaction in 56/56 episodes, latent-MSE still executes it in 27/56 episodes,
 and object-head reranking plus the oracle shield execute it in 0/56 episodes.
+Use `make skill-jepa-live-rerank-door-diagnostic` for a required-door affordance
+diagnostic. It evaluates the same object-NLL reranker on `skillwm-door-hall`,
+where moving east into a novel closed door (`+`) is required rather than unsafe.
+In the current controlled seeds, the scripted/probe proposer and oracle shield
+succeed in 56/56 episodes, latent-MSE succeeds in 15/56, and object-head
+reranking succeeds in 0/56 because it repeatedly selects lower-NLL floor moves
+instead of the novel door interaction. Treat this as a boundary condition:
+object-NLL alone is a hazard/OOD signal, not a complete affordance model.
 
 MiniHack pulls in NLE. Prefer the maintained NLE line (`nle>=1.3`) and install
 CMake first if your platform has to build NLE from source:

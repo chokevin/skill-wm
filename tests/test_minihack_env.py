@@ -151,6 +151,11 @@ def test_registered_tasks_define_des_and_paths():
     assert water.next_action_toward_goal((3, 2)) != "east"
     assert water.hazard_tiles == ("}",)
 
+    door = get_minihack_task_spec("skillwm-door-hall")
+    assert door is not None
+    assert "DOOR:closed,(3,1)" in door.des_file
+    assert door.next_action_toward_goal((2, 1)) == "east"
+
 
 def test_scripted_nav_policy_uses_task_shortest_path():
     spec = get_minihack_task_spec("skillwm-room-goal")
